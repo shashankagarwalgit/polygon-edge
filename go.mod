@@ -55,6 +55,8 @@ require (
 	pgregory.net/rapid v1.1.0
 )
 
+require github.com/holiman/uint256 v1.2.4
+
 require (
 	cloud.google.com/go/compute v1.24.0 // indirect
 	cloud.google.com/go/compute/metadata v0.2.3 // indirect
