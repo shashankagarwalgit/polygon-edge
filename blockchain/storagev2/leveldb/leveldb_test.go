@@ -14,8 +14,8 @@ import (
 	"github.com/0xPolygon/polygon-edge/blockchain/storagev2"
 	"github.com/0xPolygon/polygon-edge/types"
 	"github.com/hashicorp/go-hclog"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/syndtr/goleveldb/leveldb/opt"
 )
 
 func newStorage(t *testing.T) (*storagev2.Storage, func()) {
@@ -139,17 +139,19 @@ func readBlock(t *testing.T, s *storagev2.Storage, blockCount int, wg *sync.Wait
 			h, ok := s.ReadCanonicalHash(n)
 			require.True(t, ok)
 
-			_, err1 := s.ReadBody(n, h)
-			_, err2 := s.ReadHeader(n, h)
-			_, err3 := s.ReadReceipts(n, h)
-			b, err4 := s.ReadBlockLookup(h)
+			_, err := s.ReadBody(n, h)
+			require.NoError(t, err)
 
-			require.NoError(t, err1)
-			require.NoError(t, err2)
-			require.NoError(t, err3)
-			require.NoError(t, err4)
+			_, err = s.ReadHeader(n, h)
+			require.NoError(t, err)
 
-			assert.Equal(t, n, b)
+			_, err = s.ReadReceipts(n, h)
+			require.NoError(t, err)
+
+			b, err := s.ReadBlockLookup(h)
+			require.NoError(t, err)
+
+			require.Equal(t, n, b)
 		}
 
 		select {
@@ -208,6 +210,6 @@ insertloop:
 
 	size := dirSize(t, path)
 	t.Logf("\tldb file count: %d", countLdbFilesInPath(path))
-	t.Logf("\tdir size %d MBs", size/1_000_000)
+	t.Logf("\tdir size %d MBs", size/(1*opt.MiB))
 	wg.Wait()
 }
