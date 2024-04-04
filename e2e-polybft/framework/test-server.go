@@ -170,8 +170,6 @@ func (t *TestServer) Start() {
 		"--jsonrpc", fmt.Sprintf(":%d", config.JSONRPCPort),
 		// minimal number of child blocks required for the parent block to be considered final
 		"--num-block-confirmations", strconv.FormatUint(config.NumBlockConfirmations, 10),
-		// use tls for json rpc
-		"--use-tls", strconv.FormatBool(config.UseTLS),
 	}
 
 	if len(config.LogLevel) > 0 {
@@ -182,6 +180,10 @@ func (t *TestServer) Start() {
 
 	if config.Relayer {
 		args = append(args, "--relayer")
+	}
+
+	if config.UseTLS {
+		args = append(args, "--use-tls")
 	}
 
 	// Start the server
