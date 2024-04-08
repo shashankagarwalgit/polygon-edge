@@ -218,7 +218,7 @@ func setFlags(cmd *cobra.Command) {
 		&params.rawConfig.UseTLS,
 		useTLSFlag,
 		defaultConfig.UseTLS,
-		"start json rpc endpoint with tls",
+		"start json rpc endpoint with tls enabled",
 	)
 
 	cmd.Flags().BoolVar(
