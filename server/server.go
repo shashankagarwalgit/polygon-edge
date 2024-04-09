@@ -870,6 +870,8 @@ func (s *Server) setupJSONRPC() error {
 		ConcurrentRequestsDebug:  s.config.JSONRPC.ConcurrentRequestsDebug,
 		WebSocketReadLimit:       s.config.JSONRPC.WebSocketReadLimit,
 		UseTLS:                   s.config.UseTLS,
+		TLSCertFile:              s.config.TLSCertFile,
+		TLSKeyFile:               s.config.TLSKeyFile,
 		SecretsManager:           s.secretsManager,
 	}
 
