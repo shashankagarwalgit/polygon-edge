@@ -2030,8 +2030,8 @@ func Test_updateAccountSkipsCounts(t *testing.T) {
 		assert.Equal(t, slotsRequired(tx), pool.gauge.read())
 		checkTxExistence(t, pool, tx.Hash(), true)
 
-		// set 9 to skips in order to drop transaction next
-		accountMap.skips = 9
+		// set 999 to skips in order to drop transaction next
+		accountMap.skips = maxAccountSkips - 1
 
 		pool.updateAccountSkipsCounts(map[types.Address]uint64{
 			// empty
@@ -2065,8 +2065,8 @@ func Test_updateAccountSkipsCounts(t *testing.T) {
 		assert.Equal(t, slotsRequired(tx), pool.gauge.read())
 		checkTxExistence(t, pool, tx.Hash(), true)
 
-		// set 9 to skips in order to drop transaction next
-		accountMap.skips = 9
+		// set 999 to skips in order to drop transaction next
+		accountMap.skips = maxAccountSkips - 1
 
 		pool.updateAccountSkipsCounts(map[types.Address]uint64{
 			// empty
@@ -2100,7 +2100,7 @@ func Test_updateAccountSkipsCounts(t *testing.T) {
 		assert.Equal(t, slotsRequired(tx), pool.gauge.read())
 		checkTxExistence(t, pool, tx.Hash(), true)
 
-		// set 9 to skips in order to drop transaction next
+		// set 5 to skips in order to drop transaction next
 		accountMap.skips = 5
 
 		pool.updateAccountSkipsCounts(map[types.Address]uint64{
