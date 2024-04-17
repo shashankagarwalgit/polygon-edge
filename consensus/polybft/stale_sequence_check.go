@@ -14,6 +14,7 @@ type staleSequenceCheck struct {
 	mtx                *sync.Mutex
 	checkFrequency     time.Duration
 	sequenceShouldStop chan struct{}
+	sequenceStopping   chan struct{}
 	stop               chan struct{}
 	stopped            chan struct{}
 	getHeader          func() *types.Header
@@ -34,6 +35,7 @@ func newStaleSequenceCheck(logger hclog.Logger,
 
 func (s *staleSequenceCheck) startChecking() {
 	s.sequenceShouldStop = make(chan struct{}, 1)
+	s.sequenceStopping = make(chan struct{})
 	s.stop = make(chan struct{})
 	s.stopped = make(chan struct{})
 
@@ -49,6 +51,8 @@ func (s *staleSequenceCheck) startChecking() {
 				ticker.Stop()
 
 				return
+			case <-s.sequenceStopping:
+				ticker.Stop()
 			case <-ticker.C:
 				s.checkForStaleness()
 			}
@@ -85,5 +89,6 @@ func (s *staleSequenceCheck) chainHeightUpdated(height uint64) {
 	if height >= s.currentSequence {
 		s.logger.Info("[staleSequenceCheck] stale sequence detected", "height", height, "currentSequence", s.currentSequence)
 		s.sequenceShouldStop <- struct{}{}
+		close(s.sequenceStopping)
 	}
 }
