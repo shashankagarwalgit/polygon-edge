@@ -1030,6 +1030,7 @@ func TestConsensusRuntime_StartRound(t *testing.T) {
 
 			view := &proto.View{Round: c.round}
 			require.NoError(t, runtime.StartRound(view))
+			txPool.AssertExpectations(t)
 		})
 	}
 }
