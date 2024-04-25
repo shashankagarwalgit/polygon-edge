@@ -442,11 +442,10 @@ func (p *TxPool) dropAccount(account *account, nextNonce uint64, tx *types.Trans
 	account.nonceProposed.reset()
 
 	// drop proposed
-	dropped := account.proposed.clear()
-	clearAccountQueue(dropped)
+	account.proposed.clear()
 
 	// drop promoted
-	dropped = account.promoted.clear()
+	dropped := account.promoted.clear()
 	clearAccountQueue(dropped)
 
 	// update metrics
