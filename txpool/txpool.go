@@ -357,18 +357,28 @@ func (p *TxPool) Pop(tx *types.Transaction) {
 	account := p.accounts.get(tx.From())
 
 	account.promoted.lock(true)
+	account.proposed.lock(true)
 	account.nonceToTx.lock()
+	account.nonceProposed.lock()
 
 	defer func() {
+		account.nonceProposed.unlock()
 		account.nonceToTx.unlock()
+		account.proposed.unlock()
 		account.promoted.unlock()
 	}()
 
 	// pop the top most promoted tx
 	account.promoted.pop()
 
+	// keep it till round completion
+	account.proposed.push(tx)
+
 	// update the account nonce -> *tx map
 	account.nonceToTx.remove(tx)
+
+	// keep proposed tx nonce
+	account.nonceProposed.set(tx)
 
 	// successfully popping an account resets its demotions count to 0
 	account.resetDemotions()
@@ -396,14 +406,18 @@ func (p *TxPool) Drop(tx *types.Transaction) {
 // signals EventType_DROPPED for provided hash, clears all the slots and metrics
 // and sets nonce to provided nonce
 func (p *TxPool) dropAccount(account *account, nextNonce uint64, tx *types.Transaction) {
+	account.proposed.lock(true)
 	account.promoted.lock(true)
 	account.enqueued.lock(true)
 	account.nonceToTx.lock()
+	account.nonceProposed.lock()
 
 	defer func() {
+		account.nonceProposed.unlock()
 		account.nonceToTx.unlock()
 		account.enqueued.unlock()
 		account.promoted.unlock()
+		account.proposed.unlock()
 	}()
 
 	// num of all txs dropped
@@ -424,8 +438,15 @@ func (p *TxPool) dropAccount(account *account, nextNonce uint64, tx *types.Trans
 	// reset accounts nonce map
 	account.nonceToTx.reset()
 
+	// reset proposed nonce map
+	account.nonceProposed.reset()
+
+	// drop proposed
+	dropped := account.proposed.clear()
+	clearAccountQueue(dropped)
+
 	// drop promoted
-	dropped := account.promoted.clear()
+	dropped = account.promoted.clear()
 	clearAccountQueue(dropped)
 
 	// update metrics
@@ -521,6 +542,15 @@ func (p *TxPool) ResetWithBlock(block *types.Block) {
 		// only non-validator cleanup inactive accounts
 		p.updateAccountSkipsCounts(stateNonces, stateRoot)
 	}
+}
+
+func (p *TxPool) ReinsertProposed() {
+	p.accounts.reinsertProposed()
+	p.Prepare()
+}
+
+func (p *TxPool) ClearProposed() {
+	p.accounts.clearProposed()
 }
 
 // validateTx ensures the transaction conforms to specific
