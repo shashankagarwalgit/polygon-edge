@@ -545,7 +545,8 @@ func (p *TxPool) ResetWithBlock(block *types.Block) {
 }
 
 func (p *TxPool) ReinsertProposed() {
-	p.accounts.reinsertProposed()
+	count := p.accounts.reinsertProposed()
+	p.gauge.increase(count)
 	p.Prepare()
 }
 

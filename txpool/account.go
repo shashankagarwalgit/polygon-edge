@@ -132,7 +132,9 @@ func (m *accountsMap) allTxs(includeEnqueued bool) (
 	return
 }
 
-func (m *accountsMap) reinsertProposed() {
+func (m *accountsMap) reinsertProposed() uint64 {
+	var count uint64
+
 	m.Range(func(key, value interface{}) bool {
 		accountKey, ok := key.(types.Address)
 		if !ok {
@@ -162,6 +164,8 @@ func (m *accountsMap) reinsertProposed() {
 
 				account.promoted.push(tx)
 				account.proposed.pop()
+
+				count++
 			}
 			account.proposed.clear()
 
@@ -171,6 +175,8 @@ func (m *accountsMap) reinsertProposed() {
 
 		return true
 	})
+
+	return count
 }
 
 func (m *accountsMap) clearProposed() {
