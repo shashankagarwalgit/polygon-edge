@@ -544,12 +544,16 @@ func (p *TxPool) ResetWithBlock(block *types.Block) {
 	}
 }
 
+// ReinsertProposed returns all txs from the accounts proposed queue to the promoted queue
+// it is called from consensus_runtime when new round > 0 starts or when current sequence is cancelled
 func (p *TxPool) ReinsertProposed() {
 	count := p.accounts.reinsertProposed()
 	p.gauge.increase(count)
 	p.Prepare()
 }
 
+// ClearProposed clears accounts proposed queue when round 0 starts
+// it is called from consensus_runtime
 func (p *TxPool) ClearProposed() {
 	p.accounts.clearProposed()
 }

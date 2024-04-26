@@ -1002,24 +1002,24 @@ func TestConsensusRuntime_BuildPrepareMessage(t *testing.T) {
 
 func TestConsensusRuntime_StartRound(t *testing.T) {
 	cases := []struct {
-		name  string
-		round uint64
+		funcName string
+		round    uint64
 	}{
 		{
-			name:  "ClearProposed",
-			round: 0,
+			funcName: "ClearProposed",
+			round:    0,
 		},
 		{
-			name:  "ReinsertProposed",
-			round: 1,
+			funcName: "ReinsertProposed",
+			round:    1,
 		},
 	}
 
 	for _, c := range cases {
 		c := c
-		t.Run(c.name, func(t *testing.T) {
+		t.Run(c.funcName, func(t *testing.T) {
 			txPool := new(txPoolMock)
-			txPool.On(c.name).Once()
+			txPool.On(c.funcName).Once()
 
 			runtime := &consensusRuntime{
 				config: &runtimeConfig{

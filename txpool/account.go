@@ -167,7 +167,6 @@ func (m *accountsMap) reinsertProposed() uint64 {
 
 				count++
 			}
-			account.proposed.clear()
 
 			maps.Copy(account.nonceToTx.mapping, account.nonceProposed.mapping)
 			account.nonceProposed.reset()

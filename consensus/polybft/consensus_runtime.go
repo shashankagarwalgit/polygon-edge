@@ -1007,7 +1007,7 @@ func (c *consensusRuntime) BuildCommitMessage(proposalHash []byte, view *proto.V
 	return message
 }
 
-// StartRound starts a new round with the specified view
+// StartRound represents round start callback
 func (c *consensusRuntime) StartRound(view *proto.View) error {
 	if view.Round > 0 {
 		c.config.txPool.ReinsertProposed()
