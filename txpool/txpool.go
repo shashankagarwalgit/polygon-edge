@@ -357,18 +357,28 @@ func (p *TxPool) Pop(tx *types.Transaction) {
 	account := p.accounts.get(tx.From())
 
 	account.promoted.lock(true)
+	account.proposed.lock(true)
 	account.nonceToTx.lock()
+	account.nonceProposed.lock()
 
 	defer func() {
+		account.nonceProposed.unlock()
 		account.nonceToTx.unlock()
+		account.proposed.unlock()
 		account.promoted.unlock()
 	}()
 
 	// pop the top most promoted tx
 	account.promoted.pop()
 
+	// keep it till round completion
+	account.proposed.push(tx)
+
 	// update the account nonce -> *tx map
 	account.nonceToTx.remove(tx)
+
+	// keep proposed tx nonce
+	account.nonceProposed.set(tx)
 
 	// successfully popping an account resets its demotions count to 0
 	account.resetDemotions()
@@ -398,10 +408,14 @@ func (p *TxPool) Drop(tx *types.Transaction) {
 func (p *TxPool) dropAccount(account *account, nextNonce uint64, tx *types.Transaction) {
 	account.promoted.lock(true)
 	account.enqueued.lock(true)
+	account.proposed.lock(true)
 	account.nonceToTx.lock()
+	account.nonceProposed.lock()
 
 	defer func() {
+		account.nonceProposed.unlock()
 		account.nonceToTx.unlock()
+		account.proposed.unlock()
 		account.enqueued.unlock()
 		account.promoted.unlock()
 	}()
@@ -424,8 +438,15 @@ func (p *TxPool) dropAccount(account *account, nextNonce uint64, tx *types.Trans
 	// reset accounts nonce map
 	account.nonceToTx.reset()
 
+	// reset proposed nonce map
+	account.nonceProposed.reset()
+
+	// drop proposed
+	dropped := account.proposed.clear()
+	p.index.remove(dropped...)
+
 	// drop promoted
-	dropped := account.promoted.clear()
+	dropped = account.promoted.clear()
 	clearAccountQueue(dropped)
 
 	// update metrics
@@ -521,6 +542,20 @@ func (p *TxPool) ResetWithBlock(block *types.Block) {
 		// only non-validator cleanup inactive accounts
 		p.updateAccountSkipsCounts(stateNonces, stateRoot)
 	}
+}
+
+// ReinsertProposed returns all txs from the accounts proposed queue to the promoted queue
+// it is called from consensus_runtime when new round > 0 starts or when current sequence is cancelled
+func (p *TxPool) ReinsertProposed() {
+	count := p.accounts.reinsertProposed()
+	p.gauge.increase(count)
+	p.Prepare()
+}
+
+// ClearProposed clears accounts proposed queue when round 0 starts
+// it is called from consensus_runtime
+func (p *TxPool) ClearProposed() {
+	p.accounts.clearProposed()
 }
 
 // validateTx ensures the transaction conforms to specific

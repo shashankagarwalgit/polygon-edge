@@ -364,6 +364,14 @@ func (tp *txPoolMock) ResetWithBlock(fullBlock *types.Block) {
 	tp.Called(fullBlock)
 }
 
+func (tp *txPoolMock) ReinsertProposed() {
+	tp.Called()
+}
+
+func (tp *txPoolMock) ClearProposed() {
+	tp.Called()
+}
+
 var _ syncer.Syncer = (*syncerMock)(nil)
 
 type syncerMock struct {

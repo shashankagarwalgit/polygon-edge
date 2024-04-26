@@ -1002,6 +1002,41 @@ func TestConsensusRuntime_BuildPrepareMessage(t *testing.T) {
 	assert.Equal(t, signedMsg, runtime.BuildPrepareMessage(proposalHash, view))
 }
 
+func TestConsensusRuntime_StartRound(t *testing.T) {
+	cases := []struct {
+		funcName string
+		round    uint64
+	}{
+		{
+			funcName: "ClearProposed",
+			round:    0,
+		},
+		{
+			funcName: "ReinsertProposed",
+			round:    1,
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.funcName, func(t *testing.T) {
+			txPool := new(txPoolMock)
+			txPool.On(c.funcName).Once()
+
+			runtime := &consensusRuntime{
+				config: &runtimeConfig{
+					txPool: txPool,
+				},
+				logger: hclog.NewNullLogger(),
+			}
+
+			view := &proto.View{Round: c.round}
+			require.NoError(t, runtime.StartRound(view))
+			txPool.AssertExpectations(t)
+		})
+	}
+}
+
 func createTestBlocks(t *testing.T, numberOfBlocks, defaultEpochSize uint64,
 	validatorSet validator.AccountSet) (*types.Header, *testHeadersMap) {
 	t.Helper()

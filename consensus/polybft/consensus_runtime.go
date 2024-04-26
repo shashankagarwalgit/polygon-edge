@@ -48,6 +48,8 @@ type txPoolInterface interface {
 	Demote(*types.Transaction)
 	SetSealing(bool)
 	ResetWithBlock(*types.Block)
+	ReinsertProposed()
+	ClearProposed()
 }
 
 // epochMetadata is the static info for epoch currently being processed
@@ -1007,8 +1009,14 @@ func (c *consensusRuntime) BuildCommitMessage(proposalHash []byte, view *proto.V
 	return message
 }
 
-// StartRound starts a new round with the specified view
+// StartRound represents round start callback
 func (c *consensusRuntime) StartRound(view *proto.View) error {
+	if view.Round > 0 {
+		c.config.txPool.ReinsertProposed()
+	} else {
+		c.config.txPool.ClearProposed()
+	}
+
 	return nil
 }
 
