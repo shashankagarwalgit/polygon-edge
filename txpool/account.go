@@ -300,18 +300,18 @@ func (a *account) reset(nonce uint64, promoteCh chan<- promoteRequest) (
 	prunedPromoted,
 	prunedEnqueued []*types.Transaction,
 ) {
-	a.proposed.lock(true)
 	a.promoted.lock(true)
 	a.enqueued.lock(true)
+	a.proposed.lock(true)
 	a.nonceToTx.lock()
 	a.nonceProposed.lock()
 
 	defer func() {
 		a.nonceProposed.unlock()
 		a.nonceToTx.unlock()
+		a.proposed.unlock()
 		a.enqueued.unlock()
 		a.promoted.unlock()
-		a.proposed.unlock()
 	}()
 
 	// prune the proposed txs

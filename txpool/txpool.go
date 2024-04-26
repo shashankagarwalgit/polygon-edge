@@ -406,18 +406,18 @@ func (p *TxPool) Drop(tx *types.Transaction) {
 // signals EventType_DROPPED for provided hash, clears all the slots and metrics
 // and sets nonce to provided nonce
 func (p *TxPool) dropAccount(account *account, nextNonce uint64, tx *types.Transaction) {
-	account.proposed.lock(true)
 	account.promoted.lock(true)
 	account.enqueued.lock(true)
+	account.proposed.lock(true)
 	account.nonceToTx.lock()
 	account.nonceProposed.lock()
 
 	defer func() {
 		account.nonceProposed.unlock()
 		account.nonceToTx.unlock()
+		account.proposed.unlock()
 		account.enqueued.unlock()
 		account.promoted.unlock()
-		account.proposed.unlock()
 	}()
 
 	// num of all txs dropped
