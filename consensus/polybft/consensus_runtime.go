@@ -10,6 +10,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/0xPolygon/go-ibft/messages"
+	"github.com/0xPolygon/go-ibft/messages/proto"
+	hcf "github.com/hashicorp/go-hclog"
+	bolt "go.etcd.io/bbolt"
+
 	"github.com/0xPolygon/polygon-edge/chain"
 	"github.com/0xPolygon/polygon-edge/consensus"
 	"github.com/0xPolygon/polygon-edge/consensus/polybft/contractsapi"
@@ -19,11 +24,6 @@ import (
 	"github.com/0xPolygon/polygon-edge/contracts"
 	"github.com/0xPolygon/polygon-edge/forkmanager"
 	"github.com/0xPolygon/polygon-edge/types"
-	bolt "go.etcd.io/bbolt"
-
-	"github.com/0xPolygon/go-ibft/messages"
-	"github.com/0xPolygon/go-ibft/messages/proto"
-	hcf "github.com/hashicorp/go-hclog"
 )
 
 const (
@@ -556,6 +556,8 @@ func (c *consensusRuntime) restartEpoch(header *types.Header, dbTx *bolt.Tx) (*e
 	if err != nil {
 		return nil, err
 	}
+
+	c.config.polybftBackend.SetBlockTime(currentPolyConfig.BlockTime.Duration)
 
 	return &epochMetadata{
 		Number:              epochNumber,

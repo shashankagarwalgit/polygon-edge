@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	bolt "go.etcd.io/bbolt"
 
+	"github.com/0xPolygon/go-ibft/core"
 	"github.com/0xPolygon/polygon-edge/chain"
 	"github.com/0xPolygon/polygon-edge/consensus"
 	"github.com/0xPolygon/polygon-edge/consensus/polybft/contractsapi"
@@ -32,6 +33,9 @@ const (
 	minSyncPeers = 2
 	pbftProto    = "/pbft/0.2"
 	bridgeProto  = "/bridge/0.2"
+	// baseRoundTimeoutScaleFactor represents scaling factor,
+	// that is used to calculate the round 0 timeout for the go-ibft
+	baseRoundTimeoutScaleFactor = 2
 )
 
 // polybftBackend is an interface defining polybft methods needed by fsm and sync tracker
@@ -43,6 +47,9 @@ type polybftBackend interface {
 	// Function expects that db tx is already open
 	GetValidatorsWithTx(blockNumber uint64, parents []*types.Header,
 		dbTx *bolt.Tx) (validator.AccountSet, error)
+
+	// SetBlockTime updates the block time
+	SetBlockTime(blockTime time.Duration)
 }
 
 // Factory is the factory function to create a discovery consensus
@@ -764,6 +771,14 @@ func (p *Polybft) GetValidators(blockNumber uint64, parents []*types.Header) (va
 func (p *Polybft) GetValidatorsWithTx(blockNumber uint64, parents []*types.Header,
 	dbTx *bolt.Tx) (validator.AccountSet, error) {
 	return p.validatorsCache.GetSnapshot(blockNumber, parents, dbTx)
+}
+
+func (p *Polybft) SetBlockTime(blockTime time.Duration) {
+	// if block time is greater than default base round timeout,
+	// set base round timeout as twice the block time
+	if blockTime >= core.DefaultBaseRoundTimeout {
+		p.ibft.SetBaseRoundTimeout(blockTime * baseRoundTimeoutScaleFactor)
+	}
 }
 
 // ProcessHeaders updates the snapshot based on the verified headers
