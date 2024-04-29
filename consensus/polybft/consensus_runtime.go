@@ -1009,7 +1009,7 @@ func (c *consensusRuntime) BuildCommitMessage(proposalHash []byte, view *proto.V
 	return message
 }
 
-// StartRound represents round start callback
+// RoundStarts represents the round start callback
 func (c *consensusRuntime) RoundStarts(view *proto.View) error {
 	c.logger.Info("RoundStarts", "height", view.Height, "round", view.Round)
 	if view.Round > 0 {
