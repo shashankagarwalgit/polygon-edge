@@ -1010,12 +1010,21 @@ func (c *consensusRuntime) BuildCommitMessage(proposalHash []byte, view *proto.V
 }
 
 // StartRound represents round start callback
-func (c *consensusRuntime) StartRound(view *proto.View) error {
+func (c *consensusRuntime) RoundStarts(view *proto.View) error {
+	c.logger.Info("RoundStarts", "height", view.Height, "round", view.Round)
 	if view.Round > 0 {
 		c.config.txPool.ReinsertProposed()
 	} else {
 		c.config.txPool.ClearProposed()
 	}
+
+	return nil
+}
+
+// SequenceCancelled represents sequence cancelled callback
+func (c *consensusRuntime) SequenceCancelled(view *proto.View) error {
+	c.logger.Info("SequenceCancelled", "height", view.Height, "round", view.Round)
+	c.config.txPool.ReinsertProposed()
 
 	return nil
 }
