@@ -13,7 +13,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"google.golang.org/grpc"
 
-	"github.com/0xPolygon/polygon-edge/blockchain"
 	"github.com/0xPolygon/polygon-edge/chain"
 	"github.com/0xPolygon/polygon-edge/network"
 	"github.com/0xPolygon/polygon-edge/state"
@@ -358,18 +357,28 @@ func (p *TxPool) Pop(tx *types.Transaction) {
 	account := p.accounts.get(tx.From())
 
 	account.promoted.lock(true)
+	account.proposed.lock(true)
 	account.nonceToTx.lock()
+	account.nonceProposed.lock()
 
 	defer func() {
+		account.nonceProposed.unlock()
 		account.nonceToTx.unlock()
+		account.proposed.unlock()
 		account.promoted.unlock()
 	}()
 
 	// pop the top most promoted tx
 	account.promoted.pop()
 
+	// keep it till round completion
+	account.proposed.push(tx)
+
 	// update the account nonce -> *tx map
 	account.nonceToTx.remove(tx)
+
+	// keep proposed tx nonce
+	account.nonceProposed.set(tx)
 
 	// successfully popping an account resets its demotions count to 0
 	account.resetDemotions()
@@ -399,10 +408,14 @@ func (p *TxPool) Drop(tx *types.Transaction) {
 func (p *TxPool) dropAccount(account *account, nextNonce uint64, tx *types.Transaction) {
 	account.promoted.lock(true)
 	account.enqueued.lock(true)
+	account.proposed.lock(true)
 	account.nonceToTx.lock()
+	account.nonceProposed.lock()
 
 	defer func() {
+		account.nonceProposed.unlock()
 		account.nonceToTx.unlock()
+		account.proposed.unlock()
 		account.enqueued.unlock()
 		account.promoted.unlock()
 	}()
@@ -425,8 +438,15 @@ func (p *TxPool) dropAccount(account *account, nextNonce uint64, tx *types.Trans
 	// reset accounts nonce map
 	account.nonceToTx.reset()
 
+	// reset proposed nonce map
+	account.nonceProposed.reset()
+
+	// drop proposed
+	dropped := account.proposed.clear()
+	p.index.remove(dropped...)
+
 	// drop promoted
-	dropped := account.promoted.clear()
+	dropped = account.promoted.clear()
 	clearAccountQueue(dropped)
 
 	// update metrics
@@ -473,76 +493,69 @@ func (p *TxPool) Demote(tx *types.Transaction) {
 	p.eventManager.signalEvent(proto.EventType_DEMOTED, tx.Hash())
 }
 
-// ResetWithHeaders processes the transactions from the new
-// headers to sync the pool with the new state.
-func (p *TxPool) ResetWithHeaders(headers ...*types.Header) {
-	// process the txs in the event
+// ResetWithBlock processes the transactions from the newly
+// finalized block to sync the pool with the new state
+func (p *TxPool) ResetWithBlock(block *types.Block) {
+	// process the txs in the block
 	// to make sure the pool is up-to-date
-	p.processEvent(&blockchain.Event{
-		NewChain: headers,
-	})
-}
-
-// processEvent collects the latest nonces for each account contained
-// in the received event. Resets all known accounts with the new nonce.
-func (p *TxPool) processEvent(event *blockchain.Event) {
 	// Grab the latest state root now that the block has been inserted
 	stateRoot := p.store.Header().StateRoot
 	stateNonces := make(map[types.Address]uint64)
 
-	// discover latest (next) nonces for all accounts
-	for _, header := range event.NewChain {
-		block, ok := p.store.GetBlockByHash(header.Hash, true)
-		if !ok {
-			p.logger.Error("could not find block in store", "hash", header.Hash.String())
+	// remove mined txs from the lookup map
+	p.index.remove(block.Transactions...)
 
+	// Extract latest nonces
+	for _, tx := range block.Transactions {
+		var err error
+
+		addr := tx.From()
+		if addr == types.ZeroAddress {
+			// From field is not set, extract the signer
+			if addr, err = p.signer.Sender(tx); err != nil {
+				p.logger.Error(
+					fmt.Sprintf("unable to extract signer for transaction, %v", err),
+				)
+
+				continue
+			}
+		}
+
+		// skip already processed accounts
+		if _, processed := stateNonces[addr]; processed {
 			continue
 		}
 
-		// remove mined txs from the lookup map
-		p.index.remove(block.Transactions...)
+		// fetch latest nonce from the state
+		latestNonce := p.store.GetNonce(stateRoot, addr)
 
-		// Extract latest nonces
-		for _, tx := range block.Transactions {
-			var err error
-
-			addr := tx.From()
-			if addr == types.ZeroAddress {
-				// From field is not set, extract the signer
-				if addr, err = p.signer.Sender(tx); err != nil {
-					p.logger.Error(
-						fmt.Sprintf("unable to extract signer for transaction, %v", err),
-					)
-
-					continue
-				}
-			}
-
-			// skip already processed accounts
-			if _, processed := stateNonces[addr]; processed {
-				continue
-			}
-
-			// fetch latest nonce from the state
-			latestNonce := p.store.GetNonce(stateRoot, addr)
-
-			// update the result map
-			stateNonces[addr] = latestNonce
-		}
+		// update the result map
+		stateNonces[addr] = latestNonce
 	}
 
-	// update base fee
-	if ln := len(event.NewChain); ln > 0 {
-		p.SetBaseFee(event.NewChain[ln-1])
-	}
+	p.SetBaseFee(block.Header)
 
 	// reset accounts with the new state
 	p.resetAccounts(stateNonces)
 
 	if !p.sealing.Load() {
 		// only non-validator cleanup inactive accounts
-		p.updateAccountSkipsCounts(stateNonces)
+		p.updateAccountSkipsCounts(stateNonces, stateRoot)
 	}
+}
+
+// ReinsertProposed returns all txs from the accounts proposed queue to the promoted queue
+// it is called from consensus_runtime when new round > 0 starts or when current sequence is cancelled
+func (p *TxPool) ReinsertProposed() {
+	count := p.accounts.reinsertProposed()
+	p.gauge.increase(count)
+	p.Prepare()
+}
+
+// ClearProposed clears accounts proposed queue when round 0 starts
+// it is called from consensus_runtime
+func (p *TxPool) ClearProposed() {
+	p.accounts.clearProposed()
 }
 
 // validateTx ensures the transaction conforms to specific
@@ -793,9 +806,7 @@ func (p *TxPool) pruneAccountsWithNonceHoles() {
 // successful, an account is created for this address
 // (only once) and an enqueueRequest is signaled.
 func (p *TxPool) addTx(origin txOrigin, tx *types.Transaction) error {
-	if p.logger.IsDebug() {
-		p.logger.Debug("add tx", "origin", origin.String(), "hash", tx.Hash().String(), "type", tx.Type())
-	}
+	p.logger.Trace("add tx", "origin", origin.String(), "hash", tx.Hash().String(), "type", tx.Type())
 
 	// validate incoming tx
 	if err := p.validateTx(tx); err != nil {
@@ -909,9 +920,7 @@ func (p *TxPool) addTx(origin txOrigin, tx *types.Transaction) error {
 func (p *TxPool) invokePromotion(tx *types.Transaction, callPromote bool) {
 	p.eventManager.signalEvent(proto.EventType_ADDED, tx.Hash())
 
-	if p.logger.IsDebug() {
-		p.logger.Debug("enqueue request", "hash", tx.Hash().String())
-	}
+	p.logger.Trace("enqueue request", "hash", tx.Hash().String())
 
 	p.eventManager.signalEvent(proto.EventType_ENQUEUED, tx.Hash())
 
@@ -932,9 +941,7 @@ func (p *TxPool) handlePromoteRequest(req promoteRequest) {
 
 	// promote enqueued txs
 	promoted, pruned := account.promote()
-	if p.logger.IsDebug() {
-		p.logger.Debug("promote request", "promoted", promoted, "addr", addr.String())
-	}
+	p.logger.Trace("promote request", "promoted", promoted, "addr", addr.String())
 
 	p.index.remove(pruned...)
 	p.gauge.decrease(slotsRequired(pruned...))
@@ -1049,8 +1056,7 @@ func (p *TxPool) resetAccounts(stateNonces map[types.Address]uint64) {
 
 // updateAccountSkipsCounts update the accounts' skips,
 // the number of the consecutive blocks that doesn't have the account's transactions
-func (p *TxPool) updateAccountSkipsCounts(latestActiveAccounts map[types.Address]uint64) {
-	stateRoot := p.store.Header().StateRoot
+func (p *TxPool) updateAccountSkipsCounts(latestActiveAccounts map[types.Address]uint64, stateRoot types.Hash) {
 	p.accounts.Range(
 		func(key, value interface{}) bool {
 			address, _ := key.(types.Address)

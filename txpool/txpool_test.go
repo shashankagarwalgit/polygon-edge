@@ -109,6 +109,7 @@ func newTestPoolWithSlots(maxSlots uint64, mockStore ...store) (*TxPool, error) 
 type accountState struct {
 	enqueued,
 	promoted,
+	proposed,
 	nextNonce uint64
 }
 
@@ -2035,7 +2036,7 @@ func Test_updateAccountSkipsCounts(t *testing.T) {
 
 		pool.updateAccountSkipsCounts(map[types.Address]uint64{
 			// empty
-		})
+		}, types.Hash{1})
 
 		// make sure the account queue is empty and skips is reset
 		assert.Zero(t, accountMap.enqueued.length())
@@ -2070,7 +2071,7 @@ func Test_updateAccountSkipsCounts(t *testing.T) {
 
 		pool.updateAccountSkipsCounts(map[types.Address]uint64{
 			// empty
-		})
+		}, types.Hash{1})
 
 		// make sure the account queue is empty and skips is reset
 		assert.Zero(t, accountMap.enqueued.length())
@@ -2105,7 +2106,7 @@ func Test_updateAccountSkipsCounts(t *testing.T) {
 
 		pool.updateAccountSkipsCounts(map[types.Address]uint64{
 			addr1: 1,
-		})
+		}, types.Hash{1})
 
 		// make sure the account queue is empty and skips is reset
 		assert.Zero(t, accountMap.enqueued.length())
@@ -2167,7 +2168,7 @@ func Test_updateAccountSkipsCounts(t *testing.T) {
 		accountMap.setNonce(storeNonce + 3)
 		accountMap.skips = maxAccountSkips - 1
 
-		pool.updateAccountSkipsCounts(map[types.Address]uint64{})
+		pool.updateAccountSkipsCounts(map[types.Address]uint64{}, types.Hash{1})
 
 		// make sure the account queue is empty and skips is reset
 		assert.Zero(t, accountMap.enqueued.length())
@@ -3188,6 +3189,213 @@ func TestRecovery(t *testing.T) {
 	}
 }
 
+func TestProposed(t *testing.T) {
+	commonAssert := func(accounts map[types.Address]accountState, pool *TxPool) {
+		for addr := range accounts {
+			assert.Equal(t, // proposed
+				accounts[addr].proposed,
+				pool.accounts.get(addr).proposed.length())
+
+			assert.Equal(t, // promoted
+				accounts[addr].promoted,
+				pool.accounts.get(addr).promoted.length())
+		}
+	}
+
+	const (
+		REINSERT = 1
+		CLEAN    = 2
+	)
+
+	testCases := []struct {
+		name       string
+		method     int
+		doPop      bool
+		allTxs     map[types.Address][]*types.Transaction
+		beforeCall result
+		afterCall  result
+	}{
+		{
+			name:   "reinsert with pop",
+			method: REINSERT,
+			doPop:  true,
+			allTxs: map[types.Address][]*types.Transaction{
+				addr1: {
+					newTx(addr1, 0, 1, types.LegacyTxType),
+					newTx(addr1, 1, 1, types.LegacyTxType),
+				},
+			},
+			beforeCall: result{
+				slots: 1,
+				accounts: map[types.Address]accountState{
+					addr1: {
+						proposed: 1,
+						promoted: 1,
+					},
+				},
+			},
+			afterCall: result{
+				slots: 2,
+				accounts: map[types.Address]accountState{
+					addr1: {
+						proposed: 0,
+						promoted: 2,
+					},
+				},
+			},
+		},
+		{
+			name:   "reinsert without pop",
+			method: REINSERT,
+			doPop:  false,
+			allTxs: map[types.Address][]*types.Transaction{
+				addr1: {
+					newTx(addr1, 0, 1, types.LegacyTxType),
+					newTx(addr1, 1, 1, types.LegacyTxType),
+				},
+			},
+			beforeCall: result{
+				slots: 2,
+				accounts: map[types.Address]accountState{
+					addr1: {
+						proposed: 0,
+						promoted: 2,
+					},
+				},
+			},
+			afterCall: result{
+				slots: 2,
+				accounts: map[types.Address]accountState{
+					addr1: {
+						proposed: 0,
+						promoted: 2,
+					},
+				},
+			},
+		},
+		{
+			name:   "clean with pop",
+			method: CLEAN,
+			doPop:  true,
+			allTxs: map[types.Address][]*types.Transaction{
+				addr1: {
+					newTx(addr1, 0, 1, types.LegacyTxType),
+					newTx(addr1, 1, 1, types.LegacyTxType),
+				},
+			},
+			beforeCall: result{
+				slots: 1,
+				accounts: map[types.Address]accountState{
+					addr1: {
+						proposed: 1,
+						promoted: 1,
+					},
+				},
+			},
+			afterCall: result{
+				slots: 1,
+				accounts: map[types.Address]accountState{
+					addr1: {
+						proposed: 0,
+						promoted: 1,
+					},
+				},
+			},
+		},
+		{
+			name:   "clean without pop",
+			method: CLEAN,
+			doPop:  false,
+			allTxs: map[types.Address][]*types.Transaction{
+				addr1: {
+					newTx(addr1, 0, 1, types.LegacyTxType),
+					newTx(addr1, 1, 1, types.LegacyTxType),
+				},
+			},
+			beforeCall: result{
+				slots: 2,
+				accounts: map[types.Address]accountState{
+					addr1: {
+						proposed: 0,
+						promoted: 2,
+					},
+				},
+			},
+			afterCall: result{
+				slots: 2,
+				accounts: map[types.Address]accountState{
+					addr1: {
+						proposed: 0,
+						promoted: 2,
+					},
+				},
+			},
+		},
+	}
+
+	for _, test := range testCases {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			// create pool
+			pool, err := newTestPool()
+			assert.NoError(t, err)
+			pool.SetSigner(&mockSigner{})
+
+			pool.Start()
+			defer pool.Close()
+
+			promoteSubscription := pool.eventManager.subscribe(
+				[]proto.EventType{proto.EventType_PROMOTED},
+			)
+
+			// setup prestate
+			totalTx := 0
+			expectedEnqueued := uint64(0)
+
+			for addr, txs := range test.allTxs {
+				// preset nonce so promotions can happen
+				acc := pool.getOrCreateAccount(addr)
+				acc.setNonce(txs[0].Nonce())
+
+				expectedEnqueued += test.afterCall.accounts[addr].enqueued
+
+				// send txs
+				for _, tx := range txs {
+					totalTx++
+
+					assert.NoError(t, pool.addTx(local, tx))
+				}
+			}
+
+			ctx, cancelFn := context.WithTimeout(context.Background(), time.Second*10)
+			defer cancelFn()
+
+			// All txns should get added
+			assert.Len(t, waitForEvents(ctx, promoteSubscription, totalTx), totalTx)
+
+			pool.Prepare()
+			tx := pool.Peek()
+			assert.NotNil(t, tx)
+
+			if test.doPop {
+				pool.Pop(tx)
+			}
+
+			assert.Equal(t, test.beforeCall.slots, pool.gauge.read())
+			commonAssert(test.beforeCall.accounts, pool)
+
+			if test.method == REINSERT {
+				pool.ReinsertProposed()
+			} else {
+				pool.ClearProposed()
+			}
+
+			assert.Equal(t, test.afterCall.slots, pool.gauge.read())
+			commonAssert(test.afterCall.accounts, pool)
+		})
+	}
+}
+
 func TestGetTxs(t *testing.T) {
 	t.Parallel()
 
@@ -3646,7 +3854,7 @@ func TestAddTxsInOrder(t *testing.T) {
 	}
 }
 
-func TestResetWithHeadersSetsBaseFee(t *testing.T) {
+func TestResetWithBlockSetsBaseFee(t *testing.T) {
 	t.Parallel()
 
 	blocks := []*types.Block{
@@ -3665,7 +3873,7 @@ func TestResetWithHeadersSetsBaseFee(t *testing.T) {
 		{
 			Header: &types.Header{
 				BaseFee: 2000,
-				Hash:    types.Hash{2},
+				Hash:    types.Hash{1},
 			},
 		},
 	}
@@ -3685,12 +3893,13 @@ func TestResetWithHeadersSetsBaseFee(t *testing.T) {
 	require.NoError(t, err)
 
 	pool.SetBaseFee(blocks[0].Header)
+	require.Equal(t, blocks[0].Header.BaseFee, pool.GetBaseFee())
 
-	pool.ResetWithHeaders()
-	assert.Equal(t, blocks[0].Header.BaseFee, pool.GetBaseFee())
+	pool.ResetWithBlock(blocks[len(blocks)-1])
+	require.Equal(t, blocks[len(blocks)-1].Header.BaseFee, pool.GetBaseFee())
 
-	pool.ResetWithHeaders(blocks[len(blocks)-2].Header, blocks[len(blocks)-1].Header)
-	assert.Equal(t, blocks[len(blocks)-1].Header.BaseFee, pool.GetBaseFee())
+	pool.ResetWithBlock(blocks[len(blocks)-2])
+	require.Equal(t, blocks[len(blocks)-2].Header.BaseFee, pool.GetBaseFee())
 }
 
 func TestAddTx_TxReplacement(t *testing.T) {

@@ -147,12 +147,21 @@ func NewServer(config *Config) (*Server, error) {
 		restoreProgression: progress.NewProgressionWrapper(progress.ChainSyncRestore),
 	}
 
-	m.logger.Info("Data dir", "path", config.DataDir)
-	m.logger.Info("Version metadata",
+	m.logger.Info("data dir", "path", config.DataDir)
+	m.logger.Info("version metadata",
 		"version", versioning.Version,
 		"commit", versioning.Commit,
 		"branch", versioning.Branch,
 		"build time", versioning.BuildTime)
+
+	if m.logger.IsDebug() {
+		chainConfigJSON, err := json.MarshalIndent(config.Chain, "", "\t")
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal chain config to JSON: %w", err)
+		}
+
+		m.logger.Debug(fmt.Sprintf("chain configuration %s", string(chainConfigJSON)))
+	}
 
 	var dirPaths = []string{
 		"blockchain",
@@ -209,12 +218,21 @@ func NewServer(config *Config) (*Server, error) {
 	st := itrie.NewState(stateStorage)
 	m.state = st
 
-	m.executor = state.NewExecutor(config.Chain.Params, st, logger)
+	m.executor = state.NewExecutor(config.Chain.Params, st, logger.Named("executor"))
 
 	// custom write genesis hook per consensus engine
 	engineName := m.config.Chain.Params.GetEngine()
 	if factory, exists := genesisCreationFactory[ConsensusType(engineName)]; exists {
 		m.executor.GenesisPostHook = factory(m.config.Chain, engineName)
+	}
+
+	if factory, exists := isL1OriginatedTokenCheckFactory[ConsensusType(engineName)]; exists {
+		isL1OriginatedToken, err := factory(m.config.Chain.Params)
+		if err != nil {
+			return nil, err
+		}
+
+		m.executor.IsL1OriginatedToken = isL1OriginatedToken
 	}
 
 	// apply allow list contracts deployer genesis data

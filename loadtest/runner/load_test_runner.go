@@ -14,6 +14,7 @@ const (
 	EOATestType    = "eoa"
 	ERC20TestType  = "erc20"
 	ERC721TestType = "erc721"
+	MixedTestType  = "mixed"
 )
 
 var receiverAddr = types.StringToAddress("0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaDbeeF")
@@ -21,7 +22,7 @@ var receiverAddr = types.StringToAddress("0xDeaDbeefdEAdbeefdEadbEEFdeadbeEFdEaD
 func IsLoadTestSupported(loadTestType string) bool {
 	ltp := strings.ToLower(loadTestType)
 
-	return ltp == EOATestType || ltp == ERC20TestType || ltp == ERC721TestType
+	return ltp == EOATestType || ltp == ERC20TestType || ltp == ERC721TestType || ltp == MixedTestType
 }
 
 type account struct {
@@ -55,6 +56,7 @@ type LoadTestConfig struct {
 
 	VUs        int  // VUs is the number of virtual users.
 	TxsPerUser int  // TxsPerUser is the number of transactions per user.
+	BatchSize  int  // BatchSize is the number of transactions to send in a single batch.
 	DynamicTxs bool // DynamicTxs indicates whether the load test should generate dynamic transactions.
 
 	ResultsToJSON        bool // ResultsToJSON indicates whether the results should be written in JSON format.
@@ -92,6 +94,13 @@ func (r *LoadTestRunner) Run(cfg LoadTestConfig) error {
 		}
 
 		return erc721Runner.Run()
+	case MixedTestType:
+		mixedTxRunner, err := NewMixedTxRunner(cfg)
+		if err != nil {
+			return err
+		}
+
+		return mixedTxRunner.Run()
 	default:
 		return fmt.Errorf("unknown load test type %s", cfg.LoadTestType)
 	}
