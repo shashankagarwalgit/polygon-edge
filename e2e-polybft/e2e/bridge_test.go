@@ -1250,11 +1250,11 @@ func TestE2E_Bridge_Transfers_AccessLists(t *testing.T) {
 
 func TestE2E_Bridge_NonMintableERC20Token_WithPremine(t *testing.T) {
 	var (
+		epochSize             = 5
+		stateSyncedLogsCount  = 2
 		numBlockConfirmations = uint64(2)
-		epochSize             = 10
 		sprintSize            = uint64(5)
 		numberOfAttempts      = uint64(4)
-		stateSyncedLogsCount  = 2
 		exitEventsCount       = uint64(2)
 		tokensToTransfer      = ethgo.Gwei(10)
 		bigZero               = big.NewInt(0)
