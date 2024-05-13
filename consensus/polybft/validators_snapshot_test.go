@@ -3,6 +3,7 @@ package polybft
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/0xPolygon/polygon-edge/consensus/polybft/validator"
 	"github.com/0xPolygon/polygon-edge/types"
@@ -281,6 +282,111 @@ func TestValidatorsSnapshotCache_Empty(t *testing.T) {
 
 	_, err := testValidatorsCache.GetSnapshot(1, nil, nil)
 	assert.ErrorContains(t, err, "validator snapshot is empty for block")
+}
+
+func TestValidatorsSnapshotCache_HugeBuild(t *testing.T) {
+	t.Parallel()
+
+	type epochValidatorSetIndexes struct {
+		firstValIndex int
+		lastValIndex  int
+	}
+
+	const (
+		epochSize                 = uint64(10)
+		lastBlock                 = uint64(100_000)
+		numOfEpochsToChangeValSet = 50
+		totalValidators           = 20
+		validatorSetSize          = 5
+	)
+
+	allValidators := validator.NewTestValidators(t, totalValidators).GetPublicIdentities()
+	headersMap := &testHeadersMap{headersByNumber: make(map[uint64]*types.Header)}
+
+	oldValidators := allValidators[:validatorSetSize]
+	newValidators := oldValidators
+	firstValIndex := 0
+	lastValIndex := validatorSetSize
+	epochValidators := map[uint64]epochValidatorSetIndexes{}
+
+	// create headers for the first epoch separately
+	createHeaders(t, headersMap, 0, epochSize-1, 1, nil, newValidators)
+
+	for i := epochSize; i < lastBlock; i += epochSize {
+		from := i
+		to := i + epochSize - 1
+		epoch := i/epochSize + 1
+
+		oldValidators = newValidators
+
+		if epoch%numOfEpochsToChangeValSet == 0 {
+			// every n epochs, change validators
+			firstValIndex = lastValIndex
+			lastValIndex += validatorSetSize
+
+			if lastValIndex > totalValidators {
+				firstValIndex = 0
+				lastValIndex = validatorSetSize
+			}
+
+			newValidators = allValidators[firstValIndex:lastValIndex]
+		}
+
+		epochValidators[epoch] = epochValidatorSetIndexes{firstValIndex, lastValIndex}
+
+		createHeaders(t, headersMap, from, to, epoch, oldValidators, newValidators)
+	}
+
+	blockchainMock := new(blockchainMock)
+	blockchainMock.On("GetHeaderByNumber", mock.Anything).Return(headersMap.getHeader)
+
+	validatorsSnapshotCache := newValidatorsSnapshotCache(hclog.NewNullLogger(), newTestState(t), blockchainMock)
+
+	s := time.Now().UTC()
+
+	snapshot, err := validatorsSnapshotCache.GetSnapshot(lastBlock-epochSize, nil, nil)
+
+	t.Log("Time needed to calculate snapshot:", time.Since(s))
+
+	require.NoError(t, err)
+	require.NotNil(t, snapshot)
+	require.NotEmpty(t, snapshot)
+
+	// check if the validators of random epochs are as expected
+	snapshot, err = validatorsSnapshotCache.GetSnapshot(46, nil, nil) // epoch 5 where validator set did not change
+	require.NoError(t, err)
+
+	epochValIndexes, ok := epochValidators[5]
+	require.True(t, ok)
+	require.True(t, allValidators[epochValIndexes.firstValIndex:epochValIndexes.lastValIndex].Equals(snapshot))
+
+	snapshot, err = validatorsSnapshotCache.GetSnapshot(numOfEpochsToChangeValSet*epochSize, nil, nil) // epoch 50 where validator set was changed
+	require.NoError(t, err)
+
+	epochValIndexes, ok = epochValidators[numOfEpochsToChangeValSet]
+	require.True(t, ok)
+	require.True(t, allValidators[epochValIndexes.firstValIndex:epochValIndexes.lastValIndex].Equals(snapshot))
+
+	snapshot, err = validatorsSnapshotCache.GetSnapshot(2*numOfEpochsToChangeValSet*epochSize, nil, nil) // epoch 100 where validator set was changed
+	require.NoError(t, err)
+
+	epochValIndexes, ok = epochValidators[2*numOfEpochsToChangeValSet]
+	require.True(t, ok)
+	require.True(t, allValidators[epochValIndexes.firstValIndex:epochValIndexes.lastValIndex].Equals(snapshot))
+
+	snapshot, err = validatorsSnapshotCache.GetSnapshot(57903, nil, nil) // epoch 5790 where validator set did not change
+	require.NoError(t, err)
+
+	epochValIndexes, ok = epochValidators[57903/epochSize+1]
+	require.True(t, ok)
+	require.True(t, allValidators[epochValIndexes.firstValIndex:epochValIndexes.lastValIndex].Equals(snapshot))
+
+	snapshot, err = validatorsSnapshotCache.GetSnapshot(99991, nil, nil) // epoch 10000 where validator set did not change
+	require.NoError(t, err)
+
+	epochValIndexes, ok = epochValidators[99991/epochSize+1]
+	require.True(t, ok)
+	require.True(t, allValidators[epochValIndexes.firstValIndex:epochValIndexes.lastValIndex].Equals(snapshot))
 }
 
 func createHeaders(t *testing.T, headersMap *testHeadersMap,

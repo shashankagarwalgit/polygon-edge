@@ -296,15 +296,16 @@ func (as AccountSet) GetFilteredValidators(bitmap bitmap.Bitmap) (AccountSet, er
 
 // ApplyDelta receives ValidatorSetDelta and applies it to the values from the current AccountSet
 // (removes the ones marked for deletion and adds the one which are being added by delta)
-// Function returns new AccountSet with old and new data merged. AccountSet is immutable!
+// Function returns new AccountSet with old and new data merged.
+// Note: AccountSet is immutable in case of non-empty delta!
 func (as AccountSet) ApplyDelta(validatorsDelta *ValidatorSetDelta) (AccountSet, error) {
 	if validatorsDelta == nil || validatorsDelta.IsEmpty() {
-		return as.Copy(), nil
+		return as, nil
 	}
 
 	// Figure out which validators from the existing set are not marked for deletion.
 	// Those should be kept in the snapshot.
-	validators := make(AccountSet, 0)
+	validators := make(AccountSet, 0, as.Len())
 
 	for i, validator := range as {
 		// If a validator is not in the Removed set, or it is in the Removed set
@@ -319,7 +320,7 @@ func (as AccountSet) ApplyDelta(validatorsDelta *ValidatorSetDelta) (AccountSet,
 	// Append added validators
 	for _, addedValidator := range validatorsDelta.Added {
 		if validators.ContainsAddress(addedValidator.Address) {
-			return nil, fmt.Errorf("validator %v is already present in the validators snapshot", addedValidator.Address.String())
+			return nil, fmt.Errorf("validator %s is already present in the validators snapshot", addedValidator.Address)
 		}
 
 		validators = append(validators, addedValidator)
