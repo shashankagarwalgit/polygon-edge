@@ -155,7 +155,7 @@ func (e *Executor) ProcessBlock(
 
 	for i, t := range block.Transactions {
 		if t.Gas() > block.Header.GasLimit {
-			continue
+			return nil, runtime.ErrOutOfGas
 		}
 
 		if err = txn.Write(t); err != nil {
@@ -179,12 +179,12 @@ func (e *Executor) ProcessBlock(
 		}
 	}
 
-	var (
-		logMsg  = "[Executor.ProcessBlock] finished."
-		logArgs = []interface{}{"txs count", len(block.Transactions), "txs", buf.String()}
-	)
-
 	if logLvl <= hclog.Debug {
+		var (
+			logMsg  = "[Executor.ProcessBlock] finished."
+			logArgs = []interface{}{"txs count", len(block.Transactions), "txs", buf.String()}
+		)
+
 		e.logger.Log(logLvl, logMsg, logArgs...)
 	}
 
@@ -746,7 +746,6 @@ func (t *Transition) apply(msg *types.Transaction) (*runtime.ExecutionResult, er
 	coinbaseFee := new(big.Int).Mul(new(big.Int).SetUint64(result.GasUsed), effectiveTip)
 	t.state.AddBalance(t.ctx.Coinbase, coinbaseFee)
 
-	//nolint:godox
 	// Burn some amount if the london hardfork is applied and token is non mintable.
 	// Basically, burn amount is just transferred to the current burn contract.
 	if t.isL1OriginatedToken && t.config.London && msg.Type() != types.StateTxType {
@@ -906,8 +905,11 @@ func (t *Transition) hasCodeOrNonce(addr types.Address) bool {
 	}
 
 	codeHash := t.state.GetCodeHash(addr)
+	// EIP-7610 change - rejects the contract deployment if the destination has non-empty storage.
+	storageRoot := t.state.GetStorageRoot(addr)
 
-	return codeHash != types.EmptyCodeHash && codeHash != types.ZeroHash
+	return (codeHash != types.EmptyCodeHash && codeHash != types.ZeroHash) || // non-empty code
+		(storageRoot != types.EmptyRootHash && storageRoot != types.ZeroHash) // non-empty storage
 }
 
 func (t *Transition) applyCreate(c *runtime.Contract, host runtime.Host) *runtime.ExecutionResult {
