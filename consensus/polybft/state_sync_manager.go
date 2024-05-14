@@ -173,9 +173,6 @@ func (s *stateSyncManager) saveVote(msg *TransportMessage) error {
 		Signature: msg.Signature,
 	}
 
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
 	numSignatures, err := s.state.StateSyncStore.insertMessageVote(msg.EpochNumber, msg.Hash, msgVote, nil)
 	if err != nil {
 		return fmt.Errorf("error inserting message vote: %w", err)
