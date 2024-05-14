@@ -1250,7 +1250,7 @@ func TestE2E_Bridge_Transfers_AccessLists(t *testing.T) {
 
 func TestE2E_Bridge_NonMintableERC20Token_WithPremine(t *testing.T) {
 	var (
-		epochSize             = 5
+		epochSize             = 10
 		stateSyncedLogsCount  = 2
 		numBlockConfirmations = uint64(2)
 		sprintSize            = uint64(5)
