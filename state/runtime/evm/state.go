@@ -364,17 +364,9 @@ func (c *state) captureState(opCode int) {
 		return
 	}
 
-	bigIntArray := make([]*big.Int, 0, len(c.stack.data))
-
-	for _, num := range c.stack.data {
-		// Convert uint256 to *big.Int and append to bigIntArray as temp solution
-		bigNum := num.ToBig() // Adjust conversion based on your uint256 implementation
-		bigIntArray = append(bigIntArray, bigNum)
-	}
-
 	tracer.CaptureState(
 		c.memory,
-		bigIntArray,
+		c.stack.data,
 		opCode,
 		c.msg.Address,
 		c.stack.sp,
