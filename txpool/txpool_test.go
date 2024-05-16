@@ -2939,7 +2939,8 @@ func TestExecutablesOrder(t *testing.T) {
 
 			expectedPromotedTx := 0
 
-			for _, txs := range test.allTxs {
+			for account, txs := range test.allTxs {
+				t.Logf("Sending txs for account %s %d", test.name, account.Bytes()[0])
 				for _, tx := range txs {
 					expectedPromotedTx++
 					// send all txs
@@ -3710,9 +3711,13 @@ func TestBatchTx_SingleAccount(t *testing.T) {
 	mux := &sync.RWMutex{}
 	counter := uint64(0)
 
+	wg := sync.WaitGroup{}
+	wg.Add(int(defaultMaxAccountEnqueued))
+
 	// run max number of addTx concurrently
 	for i := 0; i < int(defaultMaxAccountEnqueued); i++ {
 		go func(i uint64) {
+			defer wg.Done()
 			tx := newTx(addr, i, 1, types.LegacyTxType)
 
 			tx.ComputeHash()
@@ -3732,6 +3737,9 @@ func TestBatchTx_SingleAccount(t *testing.T) {
 	enqueuedCount := 0
 	promotedCount := 0
 	ev := (*proto.TxPoolEvent)(nil)
+
+	// wait for all txs to be sent
+	wg.Wait()
 
 	// wait for all the submitted transactions to be promoted
 	for {

@@ -793,6 +793,10 @@ func TestSubscribe(t *testing.T) {
 		// cancel before emitting
 		cancel()
 
+		select {
+		case <-ctx.Done():
+		}
+
 		server.EmitEvent(event)
 
 		_, received := waitForEvent(t, eventCh, time.Second*5)
@@ -813,6 +817,10 @@ func TestSubscribe(t *testing.T) {
 
 		// close server before emitting event
 		server.Close()
+
+		select {
+		case <-server.closeCh:
+		}
 
 		server.EmitEvent(event)
 
