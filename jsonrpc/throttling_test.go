@@ -44,7 +44,7 @@ func TestThrottling(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(9)
 
-	for i := 0; i < 9; i++ {
+	for i := 0; i < len(attempts); i++ {
 		go func(value int, duration time.Duration, delay time.Duration, isError bool) {
 			defer wg.Done()
 			time.Sleep(delay)
