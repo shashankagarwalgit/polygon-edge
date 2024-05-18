@@ -3,8 +3,6 @@ package evm
 
 import (
 	"errors"
-	"math/big"
-	"math/bits"
 	"sync"
 
 	"github.com/0xPolygon/polygon-edge/crypto"
@@ -24,13 +22,11 @@ const (
 )
 
 var (
-	zero        = big.NewInt(0)
-	one         = big.NewInt(1)
-	wordSize    = big.NewInt(32)
 	wordSize256 = uint256.NewInt(32)
 )
 
-func equalOrOverflowsUint256(b *big.Int) bool {
+// Checks if the value overflows 1 byte, or 8 bits
+func equalOrOverflows8bits(b *uint256.Int) bool {
 	return b.BitLen() > 8
 }
 
@@ -43,11 +39,6 @@ var bufPool = sync.Pool{
 		return &buf
 	},
 }
-
-var (
-	_W = bits.UintSize
-	_S = _W / 8
-)
 
 func min(i, j uint64) uint64 {
 	if i < j {
@@ -350,8 +341,7 @@ func opSar(c *state) {
 	shift := c.pop()
 	value := c.top()
 
-	// This seams like unneeded since uint256 is maximum value
-	if equalOrOverflowsUint256(shift.ToBig()) {
+	if equalOrOverflows8bits(&shift) {
 		if value.Sign() >= 0 {
 			value.SetUint64(0)
 		} else {
@@ -812,7 +802,8 @@ func opReturnDataCopy(c *state) {
 	// 1. the dataOffset is uint64 (overflow check)
 	// 2. the sum of dataOffset and length overflows uint64
 	// 3. the length of return data has enough space to receive offset + length bytes
-	end := new(big.Int).Add(dataOffset.ToBig(), length.ToBig())
+	end := dataOffset.Clone()
+	end.Add(end, &length)
 	endAddress := end.Uint64()
 
 	if !dataOffset.IsUint64() ||
@@ -1061,7 +1052,7 @@ func opLog(size int) instruction {
 		topics := make([]types.Hash, size)
 		for i := 0; i < size; i++ {
 			v := c.pop()
-			topics[i] = bigToHash(v.ToBig())
+			topics[i] = uint256ToHash(&v)
 		}
 
 		var ok bool
@@ -1230,10 +1221,9 @@ func (c *state) buildCallContract(op OpCode) (*runtime.Contract, uint64, uint64,
 	initialGas := c.pop()
 	addr, _ := c.popAddr()
 
-	var value *big.Int
+	var value uint256.Int
 	if op == CALL || op == CALLCODE {
-		v := c.pop()
-		value = v.ToBig()
+		value = c.pop()
 	}
 
 	// input range
@@ -1263,7 +1253,7 @@ func (c *state) buildCallContract(op OpCode) (*runtime.Contract, uint64, uint64,
 		gasCost = 40
 	}
 
-	transfersValue := (op == CALL || op == CALLCODE) && value != nil && value.Sign() != 0
+	transfersValue := (op == CALL || op == CALLCODE) && value.Sign() != 0
 
 	if op == CALL {
 		if c.config.EIP158 {
@@ -1326,7 +1316,7 @@ func (c *state) buildCallContract(op OpCode) (*runtime.Contract, uint64, uint64,
 		parent.msg.Origin,
 		parent.msg.Address,
 		addr,
-		value,
+		value.ToBig(),
 		gas,
 		c.host.GetCode(addr),
 		args,
@@ -1345,7 +1335,7 @@ func (c *state) buildCallContract(op OpCode) (*runtime.Contract, uint64, uint64,
 	}
 
 	if transfersValue {
-		if c.host.GetBalance(c.msg.Address).Cmp(value) < 0 {
+		if c.host.GetBalance(c.msg.Address).Cmp(value.ToBig()) < 0 {
 			return contract, 0, 0, types.ErrInsufficientFunds
 		}
 	}
@@ -1359,10 +1349,9 @@ func (c *state) buildCreateContract(op OpCode) (*runtime.Contract, error) {
 	offset := c.pop()
 	length := c.pop()
 
-	var salt *big.Int
+	var salt uint256.Int
 	if op == CREATE2 {
-		v := c.pop()
-		salt = v.ToBig()
+		salt = c.pop()
 	}
 
 	// check if the value can be transferred
@@ -1411,7 +1400,7 @@ func (c *state) buildCreateContract(op OpCode) (*runtime.Contract, error) {
 	if op == CREATE {
 		address = crypto.CreateAddress(c.msg.Address, c.host.GetNonce(c.msg.Address))
 	} else {
-		address = crypto.CreateAddress2(c.msg.Address, bigToHash(salt), input)
+		address = crypto.CreateAddress2(c.msg.Address, uint256ToHash(&salt), input)
 	}
 
 	contract := runtime.NewContractCreation(
@@ -1451,25 +1440,4 @@ func opHalt(op OpCode) instruction {
 			c.Halt()
 		}
 	}
-}
-
-var (
-	tt256   = new(big.Int).Lsh(big.NewInt(1), 256)   // 2 ** 256
-	tt256m1 = new(big.Int).Sub(tt256, big.NewInt(1)) // 2 ** 256 - 1
-)
-
-func toU256(x *big.Int) *big.Int {
-	if x.Sign() < 0 || x.BitLen() > 256 {
-		x.And(x, tt256m1)
-	}
-
-	return x
-}
-
-func to256(x *big.Int) *big.Int {
-	if x.BitLen() > 255 {
-		x.Sub(x, tt256)
-	}
-
-	return x
 }

@@ -2,7 +2,6 @@ package evm
 
 import (
 	"errors"
-	"math/big"
 	"strings"
 
 	"sync"
@@ -265,10 +264,6 @@ func (c *state) inStaticCall() bool {
 }
 
 func uint256ToHash(b *uint256.Int) types.Hash {
-	return types.BytesToHash(b.Bytes())
-}
-
-func bigToHash(b *big.Int) types.Hash {
 	return types.BytesToHash(b.Bytes())
 }
 
