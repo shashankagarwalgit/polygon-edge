@@ -554,7 +554,11 @@ func opBalance(c *state) {
 	}
 
 	balance := c.host.GetBalance(addr)
-	uintBalance, _ := uint256.FromBig(balance)
+	uintBalance, invalidGasValue := uint256.FromBig(balance)
+
+	if invalidGasValue {
+		c.exit(errInvalidGasValue)
+	}
 
 	c.push(*uintBalance)
 }
@@ -567,7 +571,11 @@ func opSelfBalance(c *state) {
 	}
 
 	balance := c.host.GetBalance(c.msg.Address)
-	uintBalance, _ := uint256.FromBig(balance)
+	uintBalance, invalidGasValue := uint256.FromBig(balance)
+
+	if invalidGasValue {
+		c.exit(errInvalidGasValue)
+	}
 
 	c.push(*uintBalance)
 }
@@ -600,7 +608,10 @@ func opCaller(c *state) {
 
 func opCallValue(c *state) {
 	if value := c.msg.Value; value != nil {
-		uintValue, _ := uint256.FromBig(value)
+		uintValue, invalidMessageValue := uint256.FromBig(value)
+		if invalidMessageValue {
+			c.exit(errInvalidMessageValue)
+		}
 		c.push(*uintValue)
 	} else {
 		c.push(uint256.Int{0})
