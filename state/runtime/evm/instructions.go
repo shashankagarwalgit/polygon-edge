@@ -612,6 +612,7 @@ func opCallValue(c *state) {
 		if invalidMessageValue {
 			c.exit(errInvalidMessageValue)
 		}
+
 		c.push(*uintValue)
 	} else {
 		c.push(uint256.Int{0})
