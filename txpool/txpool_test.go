@@ -49,7 +49,7 @@ func newTx(addr types.Address, nonce, slots uint64, txType types.TxType) *types.
 	// base field should take 1 slot at least
 	size := txSlotSize * (slots - 1)
 	if size <= 0 {
-		size = 1
+		size = 2
 	}
 
 	input := make([]byte, size)
@@ -3710,9 +3710,13 @@ func TestBatchTx_SingleAccount(t *testing.T) {
 	mux := &sync.RWMutex{}
 	counter := uint64(0)
 
+	wg := sync.WaitGroup{}
+	wg.Add(int(defaultMaxAccountEnqueued))
+
 	// run max number of addTx concurrently
 	for i := 0; i < int(defaultMaxAccountEnqueued); i++ {
 		go func(i uint64) {
+			defer wg.Done()
 			tx := newTx(addr, i, 1, types.LegacyTxType)
 
 			tx.ComputeHash()
@@ -3732,6 +3736,9 @@ func TestBatchTx_SingleAccount(t *testing.T) {
 	enqueuedCount := 0
 	promotedCount := 0
 	ev := (*proto.TxPoolEvent)(nil)
+
+	// wait for all txs to be sent
+	wg.Wait()
 
 	// wait for all the submitted transactions to be promoted
 	for {
