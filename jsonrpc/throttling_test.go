@@ -26,13 +26,13 @@ func TestThrottling(t *testing.T) {
 		{1000 * time.Millisecond, 0, false},
 
 		// 6th & 8th attempt should fail, from now on order of execution is relevant, hence delay > 0
-		{100 * time.Millisecond, 50 * time.Millisecond, true},
-		{200 * time.Millisecond, 250 * time.Millisecond, false},
-		{100 * time.Millisecond, 300 * time.Millisecond, true},
-		{200 * time.Millisecond, 500 * time.Millisecond, false},
+		{20 * time.Millisecond, 100 * time.Millisecond, true},
+		{200 * time.Millisecond, 300 * time.Millisecond, false},
+		{20 * time.Millisecond, 400 * time.Millisecond, true},
+		{200 * time.Millisecond, 600 * time.Millisecond, false},
 	}
 
-	th := NewThrottling(5, time.Millisecond*20)
+	th := NewThrottling(5, 20*time.Millisecond)
 	sfn := func(value int, sleep time.Duration) func() (interface{}, error) {
 		return func() (interface{}, error) {
 			time.Sleep(sleep)
