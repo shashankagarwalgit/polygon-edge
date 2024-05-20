@@ -49,7 +49,7 @@ func newTx(addr types.Address, nonce, slots uint64, txType types.TxType) *types.
 	// base field should take 1 slot at least
 	size := txSlotSize * (slots - 1)
 	if size <= 0 {
-		size = 1
+		size = 2
 	}
 
 	input := make([]byte, size)
@@ -2939,8 +2939,7 @@ func TestExecutablesOrder(t *testing.T) {
 
 			expectedPromotedTx := 0
 
-			for account, txs := range test.allTxs {
-				t.Logf("Sending txs for account %s %d", test.name, account.Bytes()[0])
+			for _, txs := range test.allTxs {
 				for _, tx := range txs {
 					expectedPromotedTx++
 					// send all txs
