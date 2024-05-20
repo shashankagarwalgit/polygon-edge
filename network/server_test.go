@@ -793,9 +793,8 @@ func TestSubscribe(t *testing.T) {
 		// cancel before emitting
 		cancel()
 
-		select {
-		case <-ctx.Done():
-		}
+		// wait for ctx to close
+		<-ctx.Done()
 
 		server.EmitEvent(event)
 
@@ -818,9 +817,8 @@ func TestSubscribe(t *testing.T) {
 		// close server before emitting event
 		server.Close()
 
-		select {
-		case <-server.closeCh:
-		}
+		// wait for server to close
+		<-server.closeCh
 
 		server.EmitEvent(event)
 
