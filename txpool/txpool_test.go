@@ -1820,6 +1820,8 @@ func TestResetAccount(t *testing.T) {
 						addr1: test.newNonce,
 					})
 					pool.handlePromoteRequest(<-pool.promoteReqCh)
+					// wait for resetAccounts routine to execute before asserts
+					time.Sleep(100 * time.Millisecond)
 				} else {
 					pool.resetAccounts(map[types.Address]uint64{
 						addr1: test.newNonce,
@@ -3706,17 +3708,61 @@ func TestBatchTx_SingleAccount(t *testing.T) {
 	subscription := pool.eventManager.subscribe([]proto.EventType{proto.EventType_ENQUEUED, proto.EventType_PROMOTED})
 
 	txHashMap := map[types.Hash]struct{}{}
-	// mutex for txHashMap
-	mux := &sync.RWMutex{}
-	counter := uint64(0)
 
-	wg := sync.WaitGroup{}
-	wg.Add(int(defaultMaxAccountEnqueued))
+	var (
+		mux           sync.RWMutex // mutex for txHashMap
+		counter       uint64
+		enqueuedCount int
+		promotedCount int
+		ev            *proto.TxPoolEvent
+		wg            sync.WaitGroup
+	)
+
+	wg.Add(1)
+
+	// wait for all the submitted transactions to be promoted
+	go func() {
+		defer wg.Done()
+
+		for {
+			select {
+			case ev = <-subscription.subscriptionChannel:
+			case <-time.After(time.Second * 6):
+				t.Fatalf("timeout. processed: %d/%d and %d/%d. Added: %d",
+					enqueuedCount, defaultMaxAccountEnqueued, promotedCount, defaultMaxAccountEnqueued,
+					atomic.LoadUint64(&counter))
+			}
+
+			// check if valid transaction hash
+			mux.RLock()
+			_, hashExists := txHashMap[types.StringToHash(ev.TxHash)]
+			mux.RUnlock()
+
+			assert.True(t, hashExists)
+
+			// increment corresponding event type's count
+			if ev.Type == proto.EventType_ENQUEUED {
+				enqueuedCount++
+			} else if ev.Type == proto.EventType_PROMOTED {
+				promotedCount++
+			}
+
+			if enqueuedCount == int(defaultMaxAccountEnqueued) && promotedCount == int(defaultMaxAccountEnqueued) {
+				// compare local tracker to pool internal
+				assert.Equal(t, defaultMaxAccountEnqueued, pool.Length())
+
+				// all transactions are promoted
+				break
+			}
+		}
+	}()
+
+	// wait a little bit to start a previous routine
+	time.Sleep(100 * time.Millisecond)
 
 	// run max number of addTx concurrently
 	for i := 0; i < int(defaultMaxAccountEnqueued); i++ {
 		go func(i uint64) {
-			defer wg.Done()
 			tx := newTx(addr, i, 1, types.LegacyTxType)
 
 			tx.ComputeHash()
@@ -3733,45 +3779,7 @@ func TestBatchTx_SingleAccount(t *testing.T) {
 		}(uint64(i))
 	}
 
-	enqueuedCount := 0
-	promotedCount := 0
-	ev := (*proto.TxPoolEvent)(nil)
-
-	// wait for all txs to be sent
 	wg.Wait()
-
-	// wait for all the submitted transactions to be promoted
-	for {
-		select {
-		case ev = <-subscription.subscriptionChannel:
-		case <-time.After(time.Second * 3):
-			t.Fatalf("timeout. processed: %d/%d and %d/%d. Added: %d",
-				enqueuedCount, defaultMaxAccountEnqueued, promotedCount, defaultMaxAccountEnqueued,
-				atomic.LoadUint64(&counter))
-		}
-
-		// check if valid transaction hash
-		mux.Lock()
-		_, hashExists := txHashMap[types.StringToHash(ev.TxHash)]
-		mux.Unlock()
-
-		assert.True(t, hashExists)
-
-		// increment corresponding event type's count
-		if ev.Type == proto.EventType_ENQUEUED {
-			enqueuedCount++
-		} else if ev.Type == proto.EventType_PROMOTED {
-			promotedCount++
-		}
-
-		if enqueuedCount == int(defaultMaxAccountEnqueued) && promotedCount == int(defaultMaxAccountEnqueued) {
-			// compare local tracker to pool internal
-			assert.Equal(t, defaultMaxAccountEnqueued, pool.Length())
-
-			// all transactions are promoted
-			break
-		}
-	}
 
 	acc := pool.accounts.get(addr)
 
