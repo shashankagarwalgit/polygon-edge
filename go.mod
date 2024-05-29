@@ -23,6 +23,7 @@ require (
 	github.com/hashicorp/golang-lru v1.0.2
 	github.com/hashicorp/hcl v1.0.1-vault-5
 	github.com/hashicorp/vault/api v1.13.0
+	github.com/holiman/uint256 v1.2.4
 	github.com/json-iterator/go v1.1.12
 	github.com/libp2p/go-libp2p v0.33.2
 	github.com/libp2p/go-libp2p-kbucket v0.6.3
