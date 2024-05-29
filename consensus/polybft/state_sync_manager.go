@@ -159,9 +159,15 @@ func (s *stateSyncManager) saveVote(msg *TransportMessage) error {
 	valSet := s.validatorSet
 	s.lock.RUnlock()
 
-	if valSet == nil || msg.EpochNumber != epoch {
+	if valSet == nil || msg.EpochNumber < epoch || msg.EpochNumber > epoch+1 {
 		// Epoch metadata is undefined or received a message for the irrelevant epoch
 		return nil
+	}
+
+	if msg.EpochNumber == epoch+1 {
+		if err := s.state.EpochStore.insertEpoch(epoch+1, nil); err != nil {
+			return fmt.Errorf("error saving msg vote from a future epoch: %d. Error: %w", epoch+1, err)
+		}
 	}
 
 	if err := s.verifyVoteSignature(valSet, types.StringToAddress(msg.From), msg.Signature, msg.Hash); err != nil {
