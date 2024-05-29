@@ -166,11 +166,9 @@ func (s *stateSyncManager) saveVote(msg *TransportMessage) error {
 	if msg.EpochNumber != epoch && msg.EpochNumber != epoch+1 {
 		// Epoch metadata is undefined or received a message for the irrelevant epoch
 		return nil
-	} else {
-		if msg.EpochNumber == epoch+1 {
-			if err := s.state.EpochStore.insertEpoch(epoch+1, nil); err != nil {
-				return fmt.Errorf("error inserting epoch: %w", err)
-			}
+	} else if msg.EpochNumber == epoch+1 {
+		if err := s.state.EpochStore.insertEpoch(epoch+1, nil); err != nil {
+			return fmt.Errorf("error inserting epoch: %w", err)
 		}
 	}
 
