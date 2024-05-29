@@ -150,7 +150,8 @@ func TestStateSyncManager_MessagePool(t *testing.T) {
 		msg, err := val.sign(vals.GetValidator("0"), signer.DomainStateReceiver)
 		require.NoError(t, err)
 
-		msg.EpochNumber = 1
+		// invalid epoch +2
+		msg.EpochNumber = 2
 
 		require.NoError(t, s.saveVote(msg))
 
