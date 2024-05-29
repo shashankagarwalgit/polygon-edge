@@ -223,7 +223,7 @@ func TestE2E_JsonRPC(t *testing.T) {
 		require.NoError(t, err)
 
 		resp, err := ethClient.Call(&jsonrpc.CallMsg{
-			From: types.Address(acctZeroBalance.Address()),
+			From: acctZeroBalance.Address(),
 			To:   &target,
 			Data: input,
 		}, jsonrpc.LatestBlockNumber, nil)
