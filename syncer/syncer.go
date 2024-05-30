@@ -3,6 +3,7 @@ package syncer
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/0xPolygon/polygon-edge/helper/progress"
@@ -38,6 +39,8 @@ type syncer struct {
 
 	// Channel to notify Sync that a new status arrived
 	newStatusCh chan struct{}
+
+	lock sync.RWMutex
 }
 
 func NewSyncer(
@@ -56,6 +59,14 @@ func NewSyncer(
 		newStatusCh:     make(chan struct{}),
 		peerMap:         new(PeerMap),
 	}
+}
+
+// UpdateBlockTimeout updates block timeout in syncer
+func (s *syncer) UpdateBlockTimeout(timeout time.Duration) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	s.blockTimeout = timeout
 }
 
 // Start starts goroutine processes
@@ -165,8 +176,18 @@ func (s *syncer) Sync(callback func(*types.FullBlock) bool) error {
 	skipList := make(map[peer.ID]bool)
 
 	for {
+		s.lock.RLock()
+		blockTimeout := s.blockTimeout
+		s.lock.RUnlock()
+
 		// Wait for a new event to arrive
-		<-s.newStatusCh
+		select {
+		case <-s.newStatusCh:
+			s.logger.Debug("new peer status arrived, start syncing")
+		case <-time.After(blockTimeout):
+			s.logger.Debug("timeout while waiting for new peer status, start manual syncing")
+			s.initializePeerMap() // fetch peer statuses just in case
+		}
 
 		// fetch local latest block
 		if header := s.blockchain.Header(); header != nil {
@@ -214,7 +235,11 @@ func (s *syncer) bulkSyncWithPeer(peerID peer.ID, peerLatestBlock uint64,
 	localLatest := s.blockchain.Header().Number
 	shouldTerminate := false
 
-	blockCh, err := s.syncPeerClient.GetBlocks(peerID, localLatest+1, s.blockTimeout)
+	s.lock.RLock()
+	blockTimeout := s.blockTimeout
+	s.lock.RUnlock()
+
+	blockCh, err := s.syncPeerClient.GetBlocks(peerID, localLatest+1, blockTimeout)
 	if err != nil {
 		return 0, false, err
 	}
@@ -266,7 +291,7 @@ func (s *syncer) bulkSyncWithPeer(peerID peer.ID, peerLatestBlock uint64,
 			shouldTerminate = newBlockCallback(fullBlock)
 
 			lastReceivedNumber = block.Number()
-		case <-time.After(s.blockTimeout):
+		case <-time.After(blockTimeout):
 			return lastReceivedNumber, shouldTerminate, errTimeout
 		}
 	}
