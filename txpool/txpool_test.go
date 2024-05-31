@@ -33,6 +33,7 @@ const (
 	defaultMaxSlots           uint64 = 4096
 	defaultMaxAccountEnqueued uint64 = 128
 	validGasLimit             uint64 = 4712350
+	accountNumber             uint64 = 25
 )
 
 // addresses used in tests
@@ -190,6 +191,26 @@ func TestAddTxErrors(t *testing.T) {
 		)
 	})
 
+	t.Run("ErrTxTypeNotSupported London hardfork not enabled - AddTx", func(t *testing.T) {
+		t.Parallel()
+
+		pool := setupPool()
+
+		pool.forks.RemoveFork(chain.London)
+
+		tx := newTx(defaultAddr, 0, 1, types.DynamicFeeTxType)
+		err := pool.AddTx(signTx(tx))
+
+		assert.ErrorContains(t,
+			err,
+			ErrTxTypeNotSupported.Error(),
+		)
+		assert.ErrorContains(t,
+			err,
+			"london hardfork is not enabled",
+		)
+	})
+
 	t.Run("ErrNegativeValue", func(t *testing.T) {
 		t.Parallel()
 
@@ -321,6 +342,23 @@ func TestAddTxErrors(t *testing.T) {
 		<-pool.promoteReqCh
 	})
 
+	t.Run("FillTxPoolToTheLimit - AddTx", func(t *testing.T) {
+		t.Parallel()
+
+		pool := setupPool()
+
+		// fill the pool leaving only 1 slot
+		pool.gauge.increase(defaultMaxSlots - 1)
+
+		// create tx requiring 1 slot
+		tx := newTx(defaultAddr, 0, 1, types.LegacyTxType)
+		tx = signTx(tx)
+
+		//	enqueue tx
+		assert.NoError(t, pool.AddTx(tx))
+		<-pool.promoteReqCh
+	})
+
 	t.Run("ErrIntrinsicGas", func(t *testing.T) {
 		t.Parallel()
 
@@ -354,7 +392,7 @@ func TestAddTxErrors(t *testing.T) {
 		)
 	})
 
-	t.Run("ErrAlreadyKnown", func(t *testing.T) {
+	t.Run("ErrReplacementUnderpriced", func(t *testing.T) {
 		t.Parallel()
 
 		pool := setupPool()
@@ -426,6 +464,68 @@ func TestAddTxErrors(t *testing.T) {
 		assert.ErrorIs(t,
 			pool.addTx(local, tx),
 			ErrInsufficientFunds,
+		)
+	})
+
+	t.Run("ErrInvalidTxType_AccessListTxType", func(t *testing.T) {
+		t.Parallel()
+
+		pool := setupPool()
+
+		tx := newTx(defaultAddr, 0, 1, types.AccessListTxType)
+		tx = signTx(tx)
+
+		assert.ErrorIs(t,
+			pool.addTx(local, tx),
+			ErrInvalidTxType,
+		)
+	})
+
+	t.Run("runtime.ErrMaxCodeSizeExceeded", func(t *testing.T) {
+		t.Parallel()
+
+		pool := setupPool()
+		pool.forks = chain.AllForksEnabled.Copy()
+
+		tx := newTx(defaultAddr, 0, 1, types.AccessListTxType)
+		tx.SetInput(make([]byte, state.TxPoolMaxInitCodeSize+1))
+		tx = signTx(tx)
+
+		assert.ErrorIs(t,
+			pool.addTx(local, tx),
+			runtime.ErrMaxCodeSizeExceeded,
+		)
+	})
+
+	t.Run("ErrUnderpriced_AccessListTxType", func(t *testing.T) {
+		t.Parallel()
+
+		pool := setupPool()
+		pool.forks = chain.AllForksEnabled.Copy()
+		pool.priceLimit = 10
+
+		tx := newTx(defaultAddr, 0, 1, types.AccessListTxType)
+		tx.SetGasPrice(new(big.Int).SetUint64(1))
+		tx = signTx(tx)
+
+		assert.ErrorIs(t,
+			pool.addTx(local, tx),
+			ErrUnderpriced,
+		)
+	})
+
+	t.Run("ErrUnderpriced_DynamicFeeTxType", func(t *testing.T) {
+		t.Parallel()
+
+		pool := setupPool()
+
+		tx := newTx(defaultAddr, 0, 1, types.DynamicFeeTxType)
+		tx.SetGasFeeCap(nil)
+		tx = signTx(tx)
+
+		assert.ErrorIs(t,
+			pool.addTx(local, tx),
+			ErrUnderpriced,
 		)
 	})
 }
@@ -3627,6 +3727,86 @@ func TestGetTxs(t *testing.T) {
 	}
 }
 
+func TestFreeSlots(t *testing.T) {
+	pool, err := newTestPool()
+	require.NoError(t, err)
+
+	freeslot := pool.gauge.freeSlots()
+	require.NotEqualValues(t, uint64(0), freeslot)
+}
+
+func TestGetNonceAccountNotExist(t *testing.T) {
+	pool, err := newTestPool()
+	require.NoError(t, err)
+
+	_, addr := tests.GenerateKeyAndAddr(t)
+
+	nonce := pool.GetNonce(addr)
+	require.Equal(t, nonce, uint64(0))
+}
+
+func TestGetNonceAccountExist(t *testing.T) {
+	pool, err := newTestPool()
+	require.NoError(t, err)
+
+	signer := crypto.NewEIP155Signer(100)
+	key, err := crypto.GenerateECDSAPrivateKey()
+	require.NoError(t, err)
+
+	pool.SetSigner(signer)
+
+	addr := crypto.PubKeyToAddress(&key.PublicKey)
+	tx, err := signer.SignTx(newTx(addr, 0, 1, types.LegacyTxType), key)
+	require.NoError(t, err)
+
+	assert.NoError(t, pool.addTx(local, tx))
+
+	nonce := pool.GetNonce(addr)
+	require.Equal(t, nonce, uint64(0))
+}
+
+func TestGetPendingTx(t *testing.T) {
+	pool, err := newTestPool()
+	require.NoError(t, err)
+
+	signer := crypto.NewEIP155Signer(100)
+	key, err := crypto.GenerateECDSAPrivateKey()
+	require.NoError(t, err)
+
+	pool.SetSigner(signer)
+
+	addr := crypto.PubKeyToAddress(&key.PublicKey)
+	tx, err := signer.SignTx(newTx(addr, 0, 1, types.LegacyTxType), key)
+	require.NoError(t, err)
+
+	assert.NoError(t, pool.addTx(local, tx))
+
+	txPending, isPending := pool.GetPendingTx(tx.Hash())
+	assert.True(t, isPending)
+	assert.Equal(t, tx.Hash(), txPending.Hash())
+}
+
+func TestGetCapacity(t *testing.T) {
+	pool, err := newTestPool()
+	require.NoError(t, err)
+
+	signer := crypto.NewEIP155Signer(100)
+	key, err := crypto.GenerateECDSAPrivateKey()
+	require.NoError(t, err)
+
+	pool.SetSigner(signer)
+
+	addr := crypto.PubKeyToAddress(&key.PublicKey)
+	tx, err := signer.SignTx(newTx(addr, 0, 1, types.LegacyTxType), key)
+	require.NoError(t, err)
+
+	assert.NoError(t, pool.addTx(local, tx))
+
+	read, max := pool.GetCapacity()
+	assert.NotEqual(t, uint64(0), read)
+	assert.NotEqual(t, uint64(0), max)
+}
+
 func TestSetSealing(t *testing.T) {
 	t.Parallel()
 
@@ -3872,6 +4052,9 @@ func TestAddTxsInOrder(t *testing.T) {
 func TestResetWithBlockSetsBaseFee(t *testing.T) {
 	t.Parallel()
 
+	_, addr := tests.GenerateKeyAndAddr(t)
+	tx1 := newTx(addr, 0, 1, types.LegacyTxType)
+
 	blocks := []*types.Block{
 		{
 			Header: &types.Header{
@@ -3892,6 +4075,10 @@ func TestResetWithBlockSetsBaseFee(t *testing.T) {
 			},
 		},
 	}
+
+	blocks[0].Transactions = append(blocks[0].Transactions, tx1)
+	blocks[1].Transactions = append(blocks[1].Transactions, tx1)
+	blocks[2].Transactions = append(blocks[2].Transactions, tx1)
 
 	store := NewDefaultMockStore(blocks[0].Header)
 	store.getBlockByHashFn = func(h types.Hash, b bool) (*types.Block, bool) {
@@ -4042,63 +4229,139 @@ func getDefaultEnabledForks() *chain.Forks {
 func BenchmarkAddTxTime(b *testing.B) {
 	b.Run("benchmark add one tx", func(b *testing.B) {
 		signer := crypto.NewEIP155Signer(100)
-
 		key, err := crypto.GenerateECDSAPrivateKey()
-		if err != nil {
-			b.Fatal(err)
-		}
+		require.NoError(b, err)
 
 		signedTx, err := signer.SignTx(newTx(crypto.PubKeyToAddress(&key.PublicKey), 0, 1, types.LegacyTxType), key)
-		if err != nil {
-			b.Fatal(err)
-		}
+		require.NoError(b, err)
 
 		for i := 0; i < b.N; i++ {
 			pool, err := newTestPool()
-			if err != nil {
-				b.Fatal("fail to create pool", "err", err)
-			}
-
+			require.NoError(b, err, "fail to create pool")
 			pool.SetSigner(signer)
 
 			err = pool.addTx(local, signedTx)
-			if err != nil {
-				b.Fatal(err)
-			}
+			require.NoError(b, err)
 		}
 	})
 
 	b.Run("benchmark fill account", func(b *testing.B) {
 		signer := crypto.NewEIP155Signer(100)
-
 		key, err := crypto.GenerateECDSAPrivateKey()
-		if err != nil {
-			b.Fatal(err)
-		}
+		require.NoError(b, err)
 
 		addr := crypto.PubKeyToAddress(&key.PublicKey)
-		txs := make([]*types.Transaction, defaultMaxAccountEnqueued)
 
+		txs := make([]*types.Transaction, defaultMaxAccountEnqueued)
 		for i := range txs {
 			txs[i], err = signer.SignTx(newTx(addr, uint64(i), uint64(1), types.LegacyTxType), key)
-			if err != nil {
-				b.Fatal(err)
-			}
+			require.NoError(b, err)
 		}
 
 		for i := 0; i < b.N; i++ {
 			pool, err := newTestPool()
-			if err != nil {
-				b.Fatal("fail to create pool", "err", err)
-			}
-
+			require.NoError(b, err, "fail to create pool")
 			pool.SetSigner(signer)
 
 			for i := 0; i < len(txs); i++ {
 				err = pool.addTx(local, txs[i])
-				if err != nil {
-					b.Fatal(err)
-				}
+				require.NoError(b, err)
+			}
+		}
+	})
+
+	b.Run("benchmark more accounts add one tx", func(b *testing.B) {
+		signer := crypto.NewEIP155Signer(100)
+
+		txs := make([]*types.Transaction, defaultMaxAccountEnqueued)
+		for i := range txs {
+			key, err := crypto.GenerateECDSAPrivateKey()
+			require.NoError(b, err)
+
+			addr := crypto.PubKeyToAddress(&key.PublicKey)
+
+			txs[i], err = signer.SignTx(newTx(addr, uint64(0), uint64(1), types.LegacyTxType), key)
+			require.NoError(b, err)
+		}
+
+		for i := 0; i < b.N; i++ {
+			pool, err := newTestPool()
+			require.NoError(b, err, "fail to create pool")
+			pool.SetSigner(signer)
+
+			for i := 0; i < len(txs); i++ {
+				err = pool.addTx(local, txs[i])
+				require.NoError(b, err)
+			}
+		}
+	})
+
+	b.Run("benchmark more accounts add more transactions", func(b *testing.B) {
+		signer := crypto.NewEIP155Signer(100)
+		txs := make([]*types.Transaction, accountNumber*defaultMaxAccountEnqueued)
+
+		n := (uint64)(0)
+		for n < accountNumber {
+			key, err := crypto.GenerateECDSAPrivateKey()
+			require.NoError(b, err)
+
+			addr := crypto.PubKeyToAddress(&key.PublicKey)
+
+			i := (uint64)(0)
+			for i < defaultMaxAccountEnqueued {
+				txs[n*defaultMaxAccountEnqueued+i], err = signer.SignTx(newTx(addr, i, uint64(1), types.LegacyTxType), key)
+				require.NoError(b, err)
+
+				i++
+			}
+
+			n++
+		}
+
+		for i := 0; i < b.N; i++ {
+			pool, err := newTestPool()
+			require.NoError(b, err, "fail to create pool")
+			pool.SetSigner(signer)
+
+			for i := 0; i < len(txs); i++ {
+				err = pool.addTx(local, txs[i])
+				require.NoError(b, err)
+			}
+		}
+	})
+
+	b.Run("benchmark more accounts more add transaction and transaction replacement", func(b *testing.B) {
+		signer := crypto.NewEIP155Signer(100)
+		txs := make([]*types.Transaction, accountNumber*defaultMaxAccountEnqueued)
+
+		n := (uint64)(0)
+		for n < accountNumber {
+			key, err := crypto.GenerateECDSAPrivateKey()
+			require.NoError(b, err)
+
+			addr := crypto.PubKeyToAddress(&key.PublicKey)
+
+			i := (uint64)(0)
+			for i < defaultMaxAccountEnqueued {
+				tx := newTx(addr, i%10, uint64(1), types.LegacyTxType)
+				tx.SetGasPrice(big.NewInt(0).SetUint64(i + 1))
+				txs[n*defaultMaxAccountEnqueued+i], err = signer.SignTx(tx, key)
+				require.NoError(b, err)
+
+				i++
+			}
+
+			n++
+		}
+
+		for i := 0; i < b.N; i++ {
+			pool, err := newTestPool()
+			require.NoError(b, err, "fail to create pool")
+			pool.SetSigner(signer)
+
+			for i := 0; i < len(txs); i++ {
+				err = pool.addTx(local, txs[i])
+				require.NoError(b, err)
 			}
 		}
 	})

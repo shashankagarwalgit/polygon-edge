@@ -39,7 +39,7 @@ var (
 // in the proto definition for this message. If any rules are violated, the
 // first error encountered is returned, or nil if there are no violations.
 func (m *TransportMessage) Validate() error {
-	return m.validate(false)
+	return m.validate()
 }
 
 // ValidateAll checks the field values on TransportMessage with the rules
@@ -47,10 +47,10 @@ func (m *TransportMessage) Validate() error {
 // violated, the result is a list of violation errors wrapped in
 // TransportMessageMultiError, or nil if none found.
 func (m *TransportMessage) ValidateAll() error {
-	return m.validate(true)
+	return m.validate()
 }
 
-func (m *TransportMessage) validate(all bool) error {
+func (m *TransportMessage) validate() error {
 	if m == nil {
 		return nil
 	}
