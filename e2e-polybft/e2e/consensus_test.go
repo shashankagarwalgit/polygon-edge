@@ -243,6 +243,11 @@ func TestE2E_Consensus_RegisterValidator(t *testing.T) {
 	// register the second validator with stake
 	require.NoError(t, secondValidator.RegisterValidatorWithStake(stakeAmount))
 
+	// get owner's latest block and wait for 1 block before checks
+	latestBlock, err := owner.JSONRPC().BlockNumber()
+	require.NoError(t, err)
+	require.NoError(t, cluster.WaitForBlock(latestBlock+1, 5*time.Second))
+
 	firstValidatorInfo, err := validatorHelper.GetValidatorInfo(firstValidatorAddr, relayer)
 	require.NoError(t, err)
 	require.True(t, firstValidatorInfo.IsActive)
