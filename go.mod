@@ -30,7 +30,7 @@ require (
 	github.com/libp2p/go-libp2p-pubsub v0.10.1
 	github.com/multiformats/go-multiaddr v0.12.3
 	github.com/olekukonko/tablewriter v0.0.5
-	github.com/prometheus/client_golang v1.19.0
+	github.com/prometheus/client_golang v1.19.1
 	github.com/quasilyte/go-ruleguard v0.4.2
 	github.com/quasilyte/go-ruleguard/dsl v0.3.22
 	github.com/ryanuber/columnize v2.1.2+incompatible
