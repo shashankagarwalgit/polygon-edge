@@ -3900,6 +3900,7 @@ func TestBatchTx_SingleAccount(t *testing.T) {
 
 	wg.Add(1)
 
+	timeoutElapsed := false
 	// wait for all the submitted transactions to be promoted
 	go func() {
 		defer wg.Done()
@@ -3908,9 +3909,9 @@ func TestBatchTx_SingleAccount(t *testing.T) {
 			select {
 			case ev = <-subscription.subscriptionChannel:
 			case <-time.After(time.Second * 6):
-				t.Fatalf("timeout. processed: %d/%d and %d/%d. Added: %d",
-					enqueuedCount, defaultMaxAccountEnqueued, promotedCount, defaultMaxAccountEnqueued,
-					atomic.LoadUint64(&counter))
+				timeoutElapsed = true
+
+				return
 			}
 
 			// check if valid transaction hash
@@ -3960,6 +3961,12 @@ func TestBatchTx_SingleAccount(t *testing.T) {
 	}
 
 	wg.Wait()
+
+	if timeoutElapsed {
+		t.Fatalf("timeout. processed: %d/%d and %d/%d. Added: %d",
+			enqueuedCount, defaultMaxAccountEnqueued, promotedCount, defaultMaxAccountEnqueued,
+			atomic.LoadUint64(&counter))
+	}
 
 	acc := pool.accounts.get(addr)
 
@@ -4300,22 +4307,16 @@ func BenchmarkAddTxTime(b *testing.B) {
 		signer := crypto.NewEIP155Signer(100)
 		txs := make([]*types.Transaction, accountNumber*defaultMaxAccountEnqueued)
 
-		n := (uint64)(0)
-		for n < accountNumber {
+		for n := uint64(0); n < accountNumber; n++ {
 			key, err := crypto.GenerateECDSAPrivateKey()
 			require.NoError(b, err)
 
 			addr := crypto.PubKeyToAddress(&key.PublicKey)
 
-			i := (uint64)(0)
-			for i < defaultMaxAccountEnqueued {
+			for i := uint64(0); i < defaultMaxAccountEnqueued; i++ {
 				txs[n*defaultMaxAccountEnqueued+i], err = signer.SignTx(newTx(addr, i, uint64(1), types.LegacyTxType), key)
 				require.NoError(b, err)
-
-				i++
 			}
-
-			n++
 		}
 
 		for i := 0; i < b.N; i++ {
