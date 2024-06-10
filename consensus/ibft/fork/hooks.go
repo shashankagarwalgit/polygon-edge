@@ -62,7 +62,7 @@ func registerUpdateValidatorsHooks(
 	}
 }
 
-// registerPoSVerificationHooks registers that hooks to prevent the last epoch block from having transactions
+// registerTxInclusionGuardHooks registers that hooks to prevent the last epoch block from having transactions
 func registerTxInclusionGuardHooks(hooks *hook.Hooks, epochSize uint64) {
 	isLastEpoch := func(height uint64) bool {
 		return height > 0 && height%epochSize == 0
