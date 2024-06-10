@@ -145,7 +145,7 @@ func GetIBFTForks(ibftConfig map[string]interface{}) (IBFTForks, error) {
 
 type IBFTForks []*IBFTFork
 
-// getByFork returns the fork in which the given height is
+// getFork returns the fork in which the given height is
 // it doesn't use binary search for now because number of IBFTFork is not so many
 func (fs *IBFTForks) getFork(height uint64) *IBFTFork {
 	for idx := len(*fs) - 1; idx >= 0; idx-- {
