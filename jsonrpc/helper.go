@@ -180,7 +180,7 @@ func GetNextNonce(address types.Address, number BlockNumber, store nonceGetter) 
 	return acc.Nonce, nil
 }
 
-func DecodeTxn(arg *txnArgs, blockNumber uint64, store nonceGetter, forceSetNonce bool) (*types.Transaction, error) {
+func DecodeTxn(arg *txnArgs, store nonceGetter, forceSetNonce bool) (*types.Transaction, error) {
 	if arg == nil {
 		return nil, errors.New("missing value for required argument 0")
 	}
@@ -242,6 +242,10 @@ func DecodeTxn(arg *txnArgs, blockNumber uint64, store nonceGetter, forceSetNonc
 
 	if arg.AccessList != nil {
 		txn.SetAccessList(*arg.AccessList)
+	}
+
+	if arg.ChainID != nil {
+		txn.SetChainID(new(big.Int).SetUint64(uint64(*arg.ChainID)))
 	}
 
 	switch txType {
