@@ -1374,6 +1374,12 @@ func TestE2E_Bridge_NonMintableERC20Token_WithPremine(t *testing.T) {
 			false)
 		require.NoError(t, err)
 
+		currentBlock, err := validatorSrv.JSONRPC().GetBlockByNumber(jsonrpc.LatestBlockNumber, false)
+		require.NoError(t, err)
+
+		// Wait for 1 block before getting expected child balance
+		require.NoError(t, cluster.WaitForBlock(currentBlock.Header.Number+1, time.Second*5))
+
 		validatorBalanceAfterWithdraw, err := childEthEndpoint.GetBalance(
 			validatorAcc.Address(), jsonrpc.LatestBlockNumberOrHash)
 		require.NoError(t, err)
@@ -1390,11 +1396,17 @@ func TestE2E_Bridge_NonMintableERC20Token_WithPremine(t *testing.T) {
 			false)
 		require.NoError(t, err)
 
+		currentBlock, err = validatorSrv.JSONRPC().GetBlockByNumber(jsonrpc.LatestBlockNumber, false)
+		require.NoError(t, err)
+
+		// Wait for 1 block before getting expected child balance
+		require.NoError(t, cluster.WaitForBlock(currentBlock.Header.Number+1, time.Second*5))
+
 		nonValidatorBalanceAfterWithdraw, err := childEthEndpoint.GetBalance(
 			nonValidatorKey.Address(), jsonrpc.LatestBlockNumberOrHash)
 		require.NoError(t, err)
 
-		currentBlock, err := childEthEndpoint.GetBlockByNumber(jsonrpc.LatestBlockNumber, false)
+		currentBlock, err = childEthEndpoint.GetBlockByNumber(jsonrpc.LatestBlockNumber, false)
 		require.NoError(t, err)
 
 		currentExtra, err := polybft.GetIbftExtra(currentBlock.Header.ExtraData)
