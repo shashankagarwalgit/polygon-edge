@@ -7,7 +7,7 @@ Developers at Polygon Labs have been hard at work gathering and incorporating co
 
 ## Polygon Edge
 
-Polygon Edge is a modular and extensible framework for building Ethereum-compatible blockchain networks.
+Polygon Edge is a modular and extensible framework for building Ethereum-compatible blockchain networks, sidechains, and general scaling solutions.
 
 To find out more about Polygon, visit the [official website](https://polygon.technology/).
 
