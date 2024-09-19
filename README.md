@@ -1,5 +1,5 @@
 
-![Banner](.github/banner.jpg)
+![Banner](https://github.com/0xPolygon/polygon-edge/blob/develop/.github/banner.jpg)
 
 ## Update: Edge v1.0.0 is here!  
 
